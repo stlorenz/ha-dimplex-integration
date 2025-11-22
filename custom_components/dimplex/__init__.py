@@ -5,10 +5,14 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_HOST, CONF_PORT, DOMAIN
+from .const import CONF_HOST, CONF_NAME, CONF_PORT, DOMAIN
 from .coordinator import DimplexDataUpdateCoordinator
 
-PLATFORMS: list[Platform] = [Platform.CLIMATE]
+PLATFORMS: list[Platform] = [
+    Platform.BINARY_SENSOR,
+    Platform.CLIMATE,
+    Platform.SENSOR,
+]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -17,6 +21,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass,
         host=entry.data[CONF_HOST],
         port=entry.data.get(CONF_PORT, 80),
+        name=entry.data.get(CONF_NAME, "Dimplex"),
     )
 
     await coordinator.async_config_entry_first_refresh()
@@ -31,6 +36,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
+    coordinator: DimplexDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+
+    # Disconnect from device
+    await coordinator.async_shutdown()
+
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)

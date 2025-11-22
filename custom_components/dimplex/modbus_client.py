@@ -1,0 +1,228 @@
+"""Modbus TCP client for Dimplex heat pump."""
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from pymodbus.client import AsyncModbusTcpClient
+from pymodbus.exceptions import ModbusException
+
+_LOGGER = logging.getLogger(__name__)
+
+# Default Modbus TCP port
+DEFAULT_PORT = 502
+
+
+class DimplexModbusClient:
+    """Dimplex Modbus TCP client wrapper."""
+
+    def __init__(self, host: str, port: int = DEFAULT_PORT) -> None:
+        """Initialize the Modbus client.
+
+        Args:
+            host: IP address or hostname of the Dimplex device
+            port: Modbus TCP port (default: 502)
+
+        """
+        self.host = host
+        self.port = port
+        self._client: AsyncModbusTcpClient | None = None
+        self._connected = False
+
+    async def connect(self) -> bool:
+        """Connect to the Modbus device.
+
+        Returns:
+            True if connection successful, False otherwise
+
+        """
+        try:
+            self._client = AsyncModbusTcpClient(
+                host=self.host,
+                port=self.port,
+                timeout=10,
+            )
+            await self._client.connect()
+            self._connected = self._client.connected
+
+            if self._connected:
+                _LOGGER.info("Connected to Dimplex device at %s:%s", self.host, self.port)
+            else:
+                _LOGGER.error("Failed to connect to Dimplex device at %s:%s", self.host, self.port)
+
+            return self._connected
+        except Exception as err:
+            _LOGGER.error("Error connecting to Dimplex device: %s", err)
+            self._connected = False
+            return False
+
+    async def disconnect(self) -> None:
+        """Disconnect from the Modbus device."""
+        if self._client:
+            self._client.close()
+            self._connected = False
+            _LOGGER.info("Disconnected from Dimplex device")
+
+    @property
+    def is_connected(self) -> bool:
+        """Return connection status."""
+        return self._connected and self._client is not None and self._client.connected
+
+    async def read_holding_registers(
+        self, address: int, count: int = 1, slave: int = 1
+    ) -> list[int] | None:
+        """Read holding registers from the device.
+
+        Args:
+            address: Starting register address
+            count: Number of registers to read
+            slave: Modbus slave ID (default: 1)
+
+        Returns:
+            List of register values or None on error
+
+        """
+        if not self.is_connected:
+            _LOGGER.warning("Cannot read registers: not connected")
+            return None
+
+        try:
+            result = await self._client.read_holding_registers(
+                address=address,
+                count=count,
+                slave=slave,
+            )
+
+            if result.isError():
+                _LOGGER.error("Error reading holding registers at %s: %s", address, result)
+                return None
+
+            return result.registers
+        except ModbusException as err:
+            _LOGGER.error("Modbus exception reading holding registers: %s", err)
+            return None
+        except Exception as err:
+            _LOGGER.error("Unexpected error reading holding registers: %s", err)
+            return None
+
+    async def read_input_registers(
+        self, address: int, count: int = 1, slave: int = 1
+    ) -> list[int] | None:
+        """Read input registers from the device.
+
+        Args:
+            address: Starting register address
+            count: Number of registers to read
+            slave: Modbus slave ID (default: 1)
+
+        Returns:
+            List of register values or None on error
+
+        """
+        if not self.is_connected:
+            _LOGGER.warning("Cannot read registers: not connected")
+            return None
+
+        try:
+            result = await self._client.read_input_registers(
+                address=address,
+                count=count,
+                slave=slave,
+            )
+
+            if result.isError():
+                _LOGGER.error("Error reading input registers at %s: %s", address, result)
+                return None
+
+            return result.registers
+        except ModbusException as err:
+            _LOGGER.error("Modbus exception reading input registers: %s", err)
+            return None
+        except Exception as err:
+            _LOGGER.error("Unexpected error reading input registers: %s", err)
+            return None
+
+    async def write_register(
+        self, address: int, value: int, slave: int = 1
+    ) -> bool:
+        """Write a single register to the device.
+
+        Args:
+            address: Register address
+            value: Value to write
+            slave: Modbus slave ID (default: 1)
+
+        Returns:
+            True if write successful, False otherwise
+
+        """
+        if not self.is_connected:
+            _LOGGER.warning("Cannot write register: not connected")
+            return False
+
+        try:
+            result = await self._client.write_register(
+                address=address,
+                value=value,
+                slave=slave,
+            )
+
+            if result.isError():
+                _LOGGER.error("Error writing register at %s: %s", address, result)
+                return False
+
+            _LOGGER.debug("Successfully wrote value %s to register %s", value, address)
+            return True
+        except ModbusException as err:
+            _LOGGER.error("Modbus exception writing register: %s", err)
+            return False
+        except Exception as err:
+            _LOGGER.error("Unexpected error writing register: %s", err)
+            return False
+
+    async def test_connection(self) -> bool:
+        """Test the connection by attempting to read a register.
+
+        Returns:
+            True if connection test successful, False otherwise
+
+        """
+        if not self.is_connected:
+            if not await self.connect():
+                return False
+
+        # Try reading the status register (using L/M software address as default)
+        result = await self.read_holding_registers(address=103, count=1)
+        return result is not None
+
+    async def read_system_status(self, status_reg: int, lock_reg: int, error_reg: int) -> dict[str, Any]:
+        """Read all system status registers.
+
+        Args:
+            status_reg: Status message register address
+            lock_reg: Lock message register address
+            error_reg: Error message register address
+
+        Returns:
+            Dictionary with status, lock, and error values
+
+        """
+        status_data = {}
+
+        # Read status message
+        result = await self.read_holding_registers(status_reg, count=1)
+        if result:
+            status_data["status_code"] = result[0]
+
+        # Read lock message
+        result = await self.read_holding_registers(lock_reg, count=1)
+        if result:
+            status_data["lock_code"] = result[0]
+
+        # Read error message
+        result = await self.read_holding_registers(error_reg, count=1)
+        if result:
+            status_data["error_code"] = result[0]
+
+        return status_data
+
