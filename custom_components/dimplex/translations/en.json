@@ -1,0 +1,131 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Dimplex Setup",
+        "description": "Enter your Dimplex device details",
+        "data": {
+          "host": "Host or IP Address",
+          "port": "Port",
+          "name": "Device Name"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to the device",
+      "invalid_auth": "Invalid authentication",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "off": "Off",
+          "heating": "Heating",
+          "pool": "Swimming Pool",
+          "hot_water": "Hot Water",
+          "cooling": "Cooling",
+          "defrost": "Defrost",
+          "flow_monitoring": "Flow Monitoring",
+          "delay_mode_switch": "Delay Mode Switch",
+          "locked": "Locked",
+          "heat_pump_on_heating": "Heat Pump On - Heating",
+          "heat_pump_on_pool": "Heat Pump On - Pool",
+          "heat_pump_on_hot_water": "Heat Pump On - Hot Water",
+          "heat_pump_on_heating_auxiliary": "Heat Pump On - Heating + Auxiliary",
+          "heat_pump_on_pool_auxiliary": "Heat Pump On - Pool + Auxiliary",
+          "heat_pump_on_hot_water_auxiliary": "Heat Pump On - Hot Water + Auxiliary",
+          "primary_pump_flow": "Primary Pump Flow",
+          "heating_purge": "Heating Purge",
+          "lower_operation_limit": "Lower Operation Limit",
+          "low_pressure_limit": "Low Pressure Limit",
+          "low_pressure_shutdown": "Low Pressure Shutdown",
+          "high_pressure_safety": "High Pressure Safety",
+          "anti_cycling": "Anti-Cycling Protection",
+          "minimum_standby": "Minimum Standby Time",
+          "load_management": "Load Management",
+          "auxiliary_heater": "Auxiliary Heater",
+          "low_pressure_brine": "Low Pressure Brine",
+          "heat_pump_on_defrost": "Heat Pump On - Defrost",
+          "upper_operation_limit": "Upper Operation Limit",
+          "external_lock": "External Lock",
+          "cooling_mode": "Cooling Mode",
+          "frost_protection": "Frost Protection",
+          "flow_limit": "Flow Limit",
+          "dew_point_monitor": "Dew Point Monitor",
+          "dew_point": "Dew Point",
+          "passive_cooling": "Passive Cooling"
+        }
+      },
+      "lock": {
+        "name": "Lock Status",
+        "state": {
+          "none": "No Lock",
+          "flow_rate": "Flow Rate",
+          "function_control": "Function Control",
+          "operation_limit_auxiliary": "Operation Limit - Auxiliary Heater",
+          "system_control": "System Control",
+          "delay_cooling_switch": "Delay - Cooling Switch",
+          "pump_prerun": "Pump Pre-run",
+          "minimum_standby": "Minimum Standby Time",
+          "load_management": "Load Management",
+          "anti_cycling": "Anti-Cycling Protection",
+          "hot_water_post_heating": "Hot Water Post-Heating",
+          "regenerative": "Regenerative",
+          "utility_lock": "Utility Company Lock (EVU)",
+          "soft_starter": "Soft Starter",
+          "flow_rate_monitoring": "Flow Rate Monitoring",
+          "heat_pump_operation_limit": "Heat Pump Operation Limit",
+          "high_pressure": "High Pressure",
+          "low_pressure": "Low Pressure",
+          "heat_source_limit": "Heat Source Limit",
+          "system_limit": "System Limit",
+          "primary_circuit_load": "Primary Circuit Load",
+          "external_lock": "External Lock",
+          "inverter": "Inverter",
+          "warm_up": "Warm-Up",
+          "evd_initialization": "EvD Initialization",
+          "auxiliary_heater_enabled": "Auxiliary Heater Enabled",
+          "error_active": "Error Active",
+          "outside_temperature": "Outside Temperature",
+          "bivalent_alternative": "Bivalent Alternative",
+          "bivalent_regenerative": "Bivalent Regenerative",
+          "return_temperature": "Return Temperature",
+          "hot_water": "Hot Water"
+        }
+      },
+      "status_code": {
+        "name": "Status Code"
+      },
+      "lock_code": {
+        "name": "Lock Code"
+      },
+      "error_code": {
+        "name": "Error Code"
+      },
+      "sensor_error_code": {
+        "name": "Sensor Error Code"
+      }
+    },
+    "binary_sensor": {
+      "error_active": {
+        "name": "Error Active"
+      },
+      "lock_active": {
+        "name": "Lock Active"
+      },
+      "heat_pump_running": {
+        "name": "Heat Pump Running"
+      },
+      "defrost_active": {
+        "name": "Defrost Active"
+      }
+    }
+  }
+}
+
