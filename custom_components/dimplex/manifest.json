@@ -1,0 +1,15 @@
+{
+  "domain": "dimplex",
+  "name": "Dimplex Heatpump integration",
+  "codeowners": ["@stlorenz"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/stlorenz/ha-dimplex-integration",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/stlorenz/ha-dimplex-integration/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}
+
+
