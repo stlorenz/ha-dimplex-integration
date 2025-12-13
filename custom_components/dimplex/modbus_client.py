@@ -51,8 +51,12 @@ class DimplexModbusClient:
                 _LOGGER.error("Failed to connect to Dimplex device at %s:%s", self.host, self.port)
 
             return self._connected
-        except Exception as err:
-            _LOGGER.error("Error connecting to Dimplex device: %s", err)
+        except OSError as err:
+            _LOGGER.error("Network error connecting to Dimplex device: %s", err)
+            self._connected = False
+            return False
+        except ModbusException as err:
+            _LOGGER.error("Modbus error connecting to device: %s", err)
             self._connected = False
             return False
 
@@ -82,7 +86,7 @@ class DimplexModbusClient:
             List of register values or None on error
 
         """
-        if not self.is_connected:
+        if not self.is_connected or self._client is None:
             _LOGGER.warning("Cannot read registers: not connected")
             return None
 
@@ -101,8 +105,9 @@ class DimplexModbusClient:
         except ModbusException as err:
             _LOGGER.error("Modbus exception reading holding registers: %s", err)
             return None
-        except Exception as err:
-            _LOGGER.error("Unexpected error reading holding registers: %s", err)
+        except OSError as err:
+            _LOGGER.error("Network error reading holding registers: %s", err)
+            self._connected = False
             return None
 
     async def read_input_registers(
@@ -119,7 +124,7 @@ class DimplexModbusClient:
             List of register values or None on error
 
         """
-        if not self.is_connected:
+        if not self.is_connected or self._client is None:
             _LOGGER.warning("Cannot read registers: not connected")
             return None
 
@@ -138,8 +143,9 @@ class DimplexModbusClient:
         except ModbusException as err:
             _LOGGER.error("Modbus exception reading input registers: %s", err)
             return None
-        except Exception as err:
-            _LOGGER.error("Unexpected error reading input registers: %s", err)
+        except OSError as err:
+            _LOGGER.error("Network error reading input registers: %s", err)
+            self._connected = False
             return None
 
     async def write_register(
@@ -156,7 +162,7 @@ class DimplexModbusClient:
             True if write successful, False otherwise
 
         """
-        if not self.is_connected:
+        if not self.is_connected or self._client is None:
             _LOGGER.warning("Cannot write register: not connected")
             return False
 
@@ -176,8 +182,9 @@ class DimplexModbusClient:
         except ModbusException as err:
             _LOGGER.error("Modbus exception writing register: %s", err)
             return False
-        except Exception as err:
-            _LOGGER.error("Unexpected error writing register: %s", err)
+        except OSError as err:
+            _LOGGER.error("Network error writing register: %s", err)
+            self._connected = False
             return False
 
     async def test_connection(self) -> bool:

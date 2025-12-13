@@ -59,7 +59,8 @@ async def test_sensor_status(
     
     assert sensor.unique_id == f"{config_entry.entry_id}_status"
     assert sensor.name == "Test Dimplex Status"
-    assert sensor.native_value == "Heating"
+    # native_value returns the raw enum value, not translated
+    assert sensor.native_value == "heating"
     assert sensor.available is True
     assert sensor.entity_description.device_class == SensorDeviceClass.ENUM
 
@@ -108,7 +109,8 @@ async def test_sensor_lock(
     
     assert sensor.unique_id == f"{config_entry.entry_id}_lock"
     assert sensor.name == "Test Dimplex Lock Status"
-    assert sensor.native_value == "No Lock"
+    # native_value returns the raw enum value, not translated
+    assert sensor.native_value == "none"
     assert sensor.available is True
 
 
@@ -175,5 +177,5 @@ async def test_sensor_device_info(
     assert device_info["identifiers"] == {(DOMAIN, config_entry.entry_id)}
     assert device_info["name"] == "Test Dimplex"
     assert device_info["manufacturer"] == "Dimplex"
-    assert device_info["model"] == "Heat Pump"
+    assert device_info["model"] == "LA 1422C (Air/Water)"  # Now uses model_name from coordinator
 

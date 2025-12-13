@@ -39,15 +39,6 @@ async def test_coordinator_update_success(hass: HomeAssistant):
         mock_instance = Mock()
         mock_instance.connected = True
         mock_instance.connect = AsyncMock(return_value=True)
-        
-        # Mock system status response
-        async def mock_read_system_status(status_reg, lock_reg, error_reg):
-            return {
-                "status_code": 2,
-                "lock_code": 0,
-                "error_code": 0,
-            }
-        
         mock_instance.read_holding_registers = AsyncMock(return_value=mock_response)
         mock_client.return_value = mock_instance
         
@@ -59,7 +50,11 @@ async def test_coordinator_update_success(hass: HomeAssistant):
         
         # Patch the client's read_system_status method and is_connected property
         coordinator.client.read_system_status = AsyncMock(
-            return_value=mock_read_system_status(103, 104, 105)
+            return_value={
+                "status_code": 2,
+                "lock_code": 0,
+                "error_code": 0,
+            }
         )
         # Mock the is_connected property
         type(coordinator.client).is_connected = property(lambda self: True)
@@ -186,6 +181,8 @@ async def test_coordinator_update_with_sensor_error(hass: HomeAssistant):
                 "error_code": 0,
             }
         )
+        # Mock read_holding_registers to return sensor error value
+        coordinator.client.read_holding_registers = AsyncMock(return_value=[5])
         
         data = await coordinator._async_update_data()
         

@@ -8,7 +8,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from custom_components.dimplex import async_setup_entry, async_unload_entry
-from custom_components.dimplex.const import CONF_HOST, CONF_PORT, DOMAIN
+from custom_components.dimplex.const import (
+    CONF_HOST,
+    CONF_MODEL,
+    CONF_PORT,
+    DOMAIN,
+    HeatPumpModel,
+)
 
 
 @pytest.mark.asyncio
@@ -19,11 +25,20 @@ async def test_async_setup_entry(hass: HomeAssistant, mock_modbus_client):
     entry.data = {
         CONF_HOST: "192.168.1.100",
         CONF_PORT: 502,
+        CONF_MODEL: HeatPumpModel.LA1422C,
+    }
+    entry.options = {
+        "cooling_enabled": False,
+        "dhw_enabled": True,
+        "pool_enabled": False,
+        "second_heating_circuit": False,
     }
     entry.runtime_data = None
+    entry.add_update_listener = Mock(return_value=Mock())
+    entry.async_on_unload = Mock()
     
     with patch(
-        "custom_components.dimplex.coordinator.DimplexDataUpdateCoordinator"
+        "custom_components.dimplex.DimplexDataUpdateCoordinator"
     ) as mock_coordinator_class:
         mock_coordinator = AsyncMock()
         mock_coordinator.async_config_entry_first_refresh = AsyncMock()
@@ -41,6 +56,8 @@ async def test_async_setup_entry(hass: HomeAssistant, mock_modbus_client):
             call_kwargs = mock_coordinator_class.call_args[1]
             assert call_kwargs["host"] == "192.168.1.100"
             assert call_kwargs["port"] == 502
+            assert call_kwargs["model"] == HeatPumpModel.LA1422C
+            assert "capabilities" in call_kwargs
             
             # Verify coordinator refresh was called
             mock_coordinator.async_config_entry_first_refresh.assert_called_once()

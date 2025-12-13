@@ -1,3 +1,5 @@
+THIS IS A WORK IN PROGRESS. DO NOT USE YET. 
+
 # Dimplex Heat Pump Home Assistant Integration
 
 A custom Home Assistant integration for Dimplex heat pumps with NWPM Touch Extension module, providing comprehensive monitoring and control via Modbus TCP.
@@ -25,9 +27,14 @@ A custom Home Assistant integration for Dimplex heat pumps with NWPM Touch Exten
 - Defrost Active state
 
 ### Climate Control
-- Temperature setpoint control
-- HVAC mode control (Heat/Off)
-- Current temperature display
+- Temperature display (read-only currently)
+- HVAC mode display
+- **Note:** Temperature and mode control require Modbus register addresses to be configured. Currently the integration is read-only for monitoring purposes.
+
+### Model-Specific Configuration
+- Select your heat pump model (LA1422C, LA Series, SI Series, etc.)
+- Configure installed features (Cooling, DHW, Pool, Second Heating Circuit)
+- Features automatically adapt to your specific installation
 
 ## Installation
 
@@ -70,6 +77,21 @@ A custom Home Assistant integration for Dimplex heat pumps with NWPM Touch Exten
    - **Host**: IP address of your NWPM Touch module (e.g., `192.168.1.33`)
    - **Port**: Modbus TCP port (default: `502`)
    - **Name**: Friendly name for the device (e.g., `Dimplex Heat Pump`)
+   - **Model**: Select your heat pump model (e.g., `LA 1422C (Air/Water)`)
+
+### Configuring Features
+
+After setup, you can configure which features are installed in your system:
+
+1. Go to Settings → Devices & Services → Dimplex
+2. Click "Configure"
+3. Enable/disable features based on your installation:
+   - **Cooling Installed**: Enable if active cooling is installed (not just heat pump capability)
+   - **DHW Tank**: Enable if you have a domestic hot water tank
+   - **Pool Circuit**: Enable if pool heating is installed
+   - **Second Heating Circuit**: Enable if HC2 is configured
+
+This ensures the UI only shows controls relevant to your specific installation.
 
 ### Available Entities
 

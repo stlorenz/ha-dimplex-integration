@@ -6,10 +6,10 @@ from datetime import timedelta
 import logging
 from typing import Any
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN
+from .const import DOMAIN, MODEL_NAMES, HeatPumpModel
 from .modbus_client import DimplexModbusClient
 from .modbus_registers import (
     SoftwareVersion,
@@ -34,6 +34,8 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         port: int,
         software_version: SoftwareVersion = SoftwareVersion.L_M,
         name: str = "Dimplex",
+        model: str = HeatPumpModel.GENERIC,
+        capabilities: dict[str, Any] | None = None,
     ) -> None:
         """Initialize.
 
@@ -43,19 +45,74 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             port: Modbus TCP port
             software_version: WPM software version (defaults to L_M)
             name: Device name
+            model: Heat pump model identifier
+            capabilities: Dictionary of device capabilities and enabled features
 
         """
         self.host = host
         self.port = port
         self.software_version = software_version
         self.device_name = name
+        self.model = model
+        self.model_name = MODEL_NAMES.get(model, model)
+        self.capabilities = capabilities or {}
         self.client = DimplexModbusClient(host, port)
+        self._write_enabled = False  # Default: read-only mode
 
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
             update_interval=timedelta(seconds=30),
+        )
+
+    @property
+    def cooling_enabled(self) -> bool:
+        """Return whether cooling is enabled for this installation."""
+        return self.capabilities.get("cooling_enabled", False)
+
+    @property
+    def dhw_enabled(self) -> bool:
+        """Return whether DHW is enabled for this installation."""
+        return self.capabilities.get("dhw_enabled", True)
+
+    @property
+    def pool_enabled(self) -> bool:
+        """Return whether pool heating is enabled for this installation."""
+        return self.capabilities.get("pool_enabled", False)
+
+    @property
+    def second_hc_enabled(self) -> bool:
+        """Return whether second heating circuit is enabled."""
+        return self.capabilities.get("second_hc_enabled", False)
+
+    @property
+    def has_defrost(self) -> bool:
+        """Return whether this heat pump has defrost capability (air source)."""
+        return self.capabilities.get("defrost", True)
+
+    @property
+    def heat_source(self) -> str:
+        """Return the heat source type (air, brine, water)."""
+        return self.capabilities.get("heat_source", "unknown")
+
+    @property
+    def write_enabled(self) -> bool:
+        """Return whether write operations are enabled."""
+        return self._write_enabled
+
+    @callback
+    def set_write_enabled(self, enabled: bool) -> None:
+        """Set write enabled state.
+
+        Args:
+            enabled: True to enable write operations, False for read-only mode.
+
+        """
+        self._write_enabled = enabled
+        _LOGGER.info(
+            "Dimplex write mode %s",
+            "enabled" if enabled else "disabled (read-only)",
         )
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -116,10 +173,13 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.debug("Updated data from Dimplex device: %s", data)
             return data
 
-        except asyncio.TimeoutError as err:
+        except TimeoutError as err:
             raise UpdateFailed("Timeout communicating with device") from err
+        except OSError as err:
+            _LOGGER.error("Connection error with Dimplex device: %s", err)
+            raise UpdateFailed(f"Connection error: {err}") from err
         except Exception as err:
-            _LOGGER.error("Error updating data from Dimplex device: %s", err)
+            _LOGGER.exception("Unexpected error updating data from Dimplex device")
             raise UpdateFailed(f"Error communicating with device: {err}") from err
 
     async def async_shutdown(self) -> None:

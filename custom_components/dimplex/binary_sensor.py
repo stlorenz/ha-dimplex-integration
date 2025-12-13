@@ -103,35 +103,45 @@ class DimplexBinarySensor(
         """Initialize the binary sensor."""
         super().__init__(coordinator)
         self.entity_description = description
+        self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
             "name": entry.data.get("name", "Dimplex Heat Pump"),
             "manufacturer": "Dimplex",
-            "model": "Heat Pump",
+            "model": coordinator.model_name,
         }
 
     @property
     def name(self) -> str:
         """Return the name of the binary sensor."""
-        # Try to get device name from coordinator data, fallback to device_info
-        device_name = self.coordinator.data.get("name")
-        if not device_name and self._attr_device_info:
-            device_name = self._attr_device_info.get("name", "Dimplex")
-        return f"{device_name} {self.entity_description.name}"
+        # Get device name from coordinator data or entry data
+        if self.coordinator.data:
+            device_name = self.coordinator.data.get("name")
+        else:
+            device_name = None
+        if not device_name:
+            device_name = self._entry.data.get("name", "Dimplex")
+        
+        # Get entity name from translation or description
+        entity_name = self.entity_description.name or self.entity_description.key.replace("_", " ").title()
+        return f"{device_name} {entity_name}"
 
     @property
-    def is_on(self) -> bool:
+    def is_on(self) -> bool | None:
         """Return the state of the binary sensor."""
-        if self.entity_description.value_fn:
-            return self.entity_description.value_fn(self.coordinator.data)
-        return False
+        if self.entity_description.value_fn is None:
+            return None
+        if self.coordinator.data is None:
+            return None
+        return self.entity_description.value_fn(self.coordinator.data)
 
     @property
     def available(self) -> bool:
         """Return if entity is available."""
         return (
             super().available
+            and self.coordinator.data is not None
             and self.coordinator.data.get("connected", False)
             and self.entity_description.value_fn is not None
         )

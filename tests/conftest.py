@@ -7,7 +7,14 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from homeassistant.core import HomeAssistant
 
-from custom_components.dimplex.const import CONF_HOST, CONF_NAME, CONF_PORT, DOMAIN
+from custom_components.dimplex.const import (
+    CONF_HOST,
+    CONF_MODEL,
+    CONF_NAME,
+    CONF_PORT,
+    DOMAIN,
+    HeatPumpModel,
+)
 
 
 @pytest.fixture
@@ -53,6 +60,13 @@ def mock_config_entry() -> dict:
             CONF_HOST: "192.168.1.100",
             CONF_PORT: 502,
             CONF_NAME: "Test Dimplex",
+            CONF_MODEL: HeatPumpModel.LA1422C,
+        },
+        "options": {
+            "cooling_enabled": False,
+            "dhw_enabled": True,
+            "pool_enabled": False,
+            "second_heating_circuit": False,
         },
         "title": "Test Dimplex",
         "unique_id": "test_unique_id",
@@ -75,5 +89,12 @@ async def mock_dimplex_coordinator(hass: HomeAssistant) -> AsyncMock:
     coordinator.async_request_refresh = AsyncMock()
     coordinator.async_config_entry_first_refresh = AsyncMock()
     coordinator.last_update_success = True
+    # Add model attributes
+    coordinator.model = HeatPumpModel.LA1422C
+    coordinator.model_name = "LA 1422C (Air/Water)"
+    coordinator.cooling_enabled = False
+    coordinator.dhw_enabled = True
+    coordinator.pool_enabled = False
+    coordinator.second_hc_enabled = False
     return coordinator
 

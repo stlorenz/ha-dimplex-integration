@@ -7,7 +7,8 @@
         "data": {
           "host": "Host or IP Address",
           "port": "Port",
-          "name": "Device Name"
+          "name": "Device Name",
+          "model": "Heat Pump Model"
         }
       }
     },
@@ -18,6 +19,20 @@
     },
     "abort": {
       "already_configured": "Device is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Dimplex Features",
+        "description": "Configure installed features for your {model}. Only enable features that are actually installed in your heating system.",
+        "data": {
+          "cooling_enabled": "Cooling Installed",
+          "dhw_enabled": "Domestic Hot Water (DHW) Tank",
+          "pool_enabled": "Pool Heating Circuit",
+          "second_heating_circuit": "Second Heating Circuit (HC2)"
+        }
+      }
     }
   },
   "entity": {
@@ -124,6 +139,11 @@
       },
       "defrost_active": {
         "name": "Defrost Active"
+      }
+    },
+    "switch": {
+      "write_enable": {
+        "name": "Write Enable"
       }
     }
   }
