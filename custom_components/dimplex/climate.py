@@ -17,7 +17,11 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_NAME, DOMAIN
 from .coordinator import DimplexDataUpdateCoordinator
-from .modbus_registers_extended import OperatingModeRegisters, SettingsRegisters
+from .modbus_registers_extended import (
+    OperatingModeRegisters,
+    SettingsRegisters,
+    get_register_definition,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -48,6 +52,7 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
     _attr_target_temperature_step = 0.5
     _attr_min_temp = 10.0
     _attr_max_temp = 30.0
+    _enable_turn_on_off_backwards_compat = False
 
     def __init__(
         self,
@@ -127,17 +132,18 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
     
     def _has_temperature_register(self) -> bool:
         """Check if temperature setpoint register is configured."""
-        register = SettingsRegisters.HC1_COMFORT_SETPOINT.get(
+        reg_def = get_register_definition(
+            SettingsRegisters.HC1_COMFORT_SETPOINT,
             self.coordinator.software_version
         )
-        return register is not None
+        return reg_def is not None
     
     def _has_mode_register(self) -> bool:
         """Check if operating mode register is configured."""
-        register = OperatingModeRegisters.CURRENT_MODE.get(
+        mode_addr = OperatingModeRegisters.CURRENT_MODE.get(
             self.coordinator.software_version
         )
-        return register is not None
+        return mode_addr is not None
 
     @property
     def current_temperature(self) -> float | None:
@@ -313,9 +319,11 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
             Register address if configured, None if not available.
         """
         # Use heating circuit 1 comfort setpoint as the temperature setpoint
-        return SettingsRegisters.HC1_COMFORT_SETPOINT.get(
+        reg_def = get_register_definition(
+            SettingsRegisters.HC1_COMFORT_SETPOINT,
             self.coordinator.software_version
         )
+        return reg_def.address if reg_def else None
 
     def _get_mode_register(self) -> int | None:
         """Get the operating mode register address for the current software version.

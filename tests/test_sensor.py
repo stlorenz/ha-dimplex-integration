@@ -49,12 +49,12 @@ async def test_sensor_status(
     config_entry.entry_id = mock_config_entry["entry_id"]
     config_entry.data = mock_config_entry["data"]
     
-    from custom_components.dimplex.sensor import SENSOR_TYPES
+    from custom_components.dimplex.sensor import STATUS_SENSOR_TYPES
     
     # Set device name in coordinator data
     mock_dimplex_coordinator.data["name"] = "Test Dimplex"
     
-    status_description = next(d for d in SENSOR_TYPES if d.key == "status")
+    status_description = next(d for d in STATUS_SENSOR_TYPES if d.key == "status")
     sensor = DimplexSensor(mock_dimplex_coordinator, config_entry, status_description)
     
     assert sensor.unique_id == f"{config_entry.entry_id}_status"
@@ -76,9 +76,9 @@ async def test_sensor_status_code(
     config_entry.entry_id = mock_config_entry["entry_id"]
     config_entry.data = mock_config_entry["data"]
     
-    from custom_components.dimplex.sensor import SENSOR_TYPES
+    from custom_components.dimplex.sensor import STATUS_SENSOR_TYPES
     
-    status_code_description = next(d for d in SENSOR_TYPES if d.key == "status_code")
+    status_code_description = next(d for d in STATUS_SENSOR_TYPES if d.key == "status_code")
     sensor = DimplexSensor(
         mock_dimplex_coordinator, config_entry, status_code_description
     )
@@ -99,12 +99,12 @@ async def test_sensor_lock(
     config_entry.entry_id = mock_config_entry["entry_id"]
     config_entry.data = mock_config_entry["data"]
     
-    from custom_components.dimplex.sensor import SENSOR_TYPES
+    from custom_components.dimplex.sensor import STATUS_SENSOR_TYPES
     
     # Set device name in coordinator data
     mock_dimplex_coordinator.data["name"] = "Test Dimplex"
     
-    lock_description = next(d for d in SENSOR_TYPES if d.key == "lock")
+    lock_description = next(d for d in STATUS_SENSOR_TYPES if d.key == "lock")
     sensor = DimplexSensor(mock_dimplex_coordinator, config_entry, lock_description)
     
     assert sensor.unique_id == f"{config_entry.entry_id}_lock"
@@ -128,9 +128,9 @@ async def test_sensor_unavailable_when_disconnected(
     # Set coordinator to disconnected
     mock_dimplex_coordinator.data["connected"] = False
     
-    from custom_components.dimplex.sensor import SENSOR_TYPES
+    from custom_components.dimplex.sensor import STATUS_SENSOR_TYPES
     
-    status_description = next(d for d in SENSOR_TYPES if d.key == "status")
+    status_description = next(d for d in STATUS_SENSOR_TYPES if d.key == "status")
     sensor = DimplexSensor(mock_dimplex_coordinator, config_entry, status_description)
     
     assert sensor.available is False
@@ -147,9 +147,9 @@ async def test_sensor_extra_attributes(
     config_entry.entry_id = mock_config_entry["entry_id"]
     config_entry.data = mock_config_entry["data"]
     
-    from custom_components.dimplex.sensor import SENSOR_TYPES
+    from custom_components.dimplex.sensor import STATUS_SENSOR_TYPES
     
-    status_description = next(d for d in SENSOR_TYPES if d.key == "status")
+    status_description = next(d for d in STATUS_SENSOR_TYPES if d.key == "status")
     sensor = DimplexSensor(mock_dimplex_coordinator, config_entry, status_description)
     
     attributes = sensor.extra_state_attributes
@@ -168,9 +168,9 @@ async def test_sensor_device_info(
     config_entry.entry_id = mock_config_entry["entry_id"]
     config_entry.data = mock_config_entry["data"]
     
-    from custom_components.dimplex.sensor import SENSOR_TYPES
+    from custom_components.dimplex.sensor import STATUS_SENSOR_TYPES
     
-    status_description = next(d for d in SENSOR_TYPES if d.key == "status")
+    status_description = next(d for d in STATUS_SENSOR_TYPES if d.key == "status")
     sensor = DimplexSensor(mock_dimplex_coordinator, config_entry, status_description)
     
     device_info = sensor._attr_device_info

@@ -7,6 +7,17 @@ from typing import Any
 from pymodbus.client import AsyncModbusTcpClient
 from pymodbus.exceptions import ModbusException
 
+from .modbus_registers_extended import (
+    EnergyRegisters,
+    OperatingDataRegisters,
+    RegisterDefinition,
+    RuntimeRegisters,
+    get_register_definition,
+    read_32bit_value,
+    scale_value,
+)
+from .modbus_registers import SoftwareVersion
+
 _LOGGER = logging.getLogger(__name__)
 
 # Default Modbus TCP port
@@ -233,3 +244,131 @@ class DimplexModbusClient:
 
         return status_data
 
+    async def _read_register_with_definition(
+        self,
+        register_def: RegisterDefinition,
+        slave: int = 1,
+    ) -> float | None:
+        """Read a register using its definition and return scaled value.
+        
+        Args:
+            register_def: Register definition with address, scale, etc.
+            slave: Modbus slave ID
+            
+        Returns:
+            Scaled float value or None if read failed
+        """
+        if register_def.address is None:
+            return None
+            
+        count = register_def.size
+        result = await self.read_holding_registers(register_def.address, count=count, slave=slave)
+        
+        if result is None:
+            return None
+            
+        # Combine registers for 32-bit values
+        if count == 2:
+            raw_value = read_32bit_value(result)
+        else:
+            raw_value = result[0]
+            
+        return scale_value(raw_value, register_def)
+
+    async def read_operating_data(
+        self, software_version: SoftwareVersion
+    ) -> dict[str, Any]:
+        """Read all operating data (temperatures, pressures, power, etc.).
+        
+        Args:
+            software_version: WPM software version to determine register addresses
+            
+        Returns:
+            Dictionary with all operating data values
+        """
+        data: dict[str, Any] = {}
+        
+        # Read temperature values
+        temp_registers = [
+            ("flow_temperature", OperatingDataRegisters.FLOW_TEMPERATURE),
+            ("return_temperature", OperatingDataRegisters.RETURN_TEMPERATURE),
+            ("outside_temperature", OperatingDataRegisters.OUTSIDE_TEMPERATURE),
+            ("hot_water_temperature", OperatingDataRegisters.HOT_WATER_TEMPERATURE),
+            ("heat_source_inlet_temperature", OperatingDataRegisters.HEAT_SOURCE_INLET_TEMP),
+            ("heat_source_outlet_temperature", OperatingDataRegisters.HEAT_SOURCE_OUTLET_TEMP),
+            ("room_temperature", OperatingDataRegisters.ROOM_TEMPERATURE),
+            ("flow_setpoint", OperatingDataRegisters.FLOW_SETPOINT),
+            ("hot_water_setpoint", OperatingDataRegisters.HOT_WATER_SETPOINT),
+            ("evaporator_temperature", OperatingDataRegisters.EVAPORATOR_TEMPERATURE),
+            ("condenser_temperature", OperatingDataRegisters.CONDENSER_TEMPERATURE),
+            ("suction_gas_temperature", OperatingDataRegisters.SUCTION_GAS_TEMPERATURE),
+            ("discharge_gas_temperature", OperatingDataRegisters.DISCHARGE_GAS_TEMPERATURE),
+        ]
+        
+        for key, register_dict in temp_registers:
+            reg_def = get_register_definition(register_dict, software_version)
+            if reg_def:
+                value = await self._read_register_with_definition(reg_def)
+                if value is not None:
+                    data[key] = value
+        
+        # Read pressure values
+        pressure_registers = [
+            ("high_pressure", OperatingDataRegisters.HIGH_PRESSURE),
+            ("low_pressure", OperatingDataRegisters.LOW_PRESSURE),
+            ("brine_pressure", OperatingDataRegisters.BRINE_PRESSURE),
+            ("water_pressure", OperatingDataRegisters.WATER_PRESSURE),
+        ]
+        
+        for key, register_dict in pressure_registers:
+            reg_def = get_register_definition(register_dict, software_version)
+            if reg_def:
+                value = await self._read_register_with_definition(reg_def)
+                if value is not None:
+                    data[key] = value
+        
+        # Read power and energy values
+        energy_registers = [
+            ("current_power_consumption", EnergyRegisters.CURRENT_POWER_CONSUMPTION),
+            ("current_heating_power", EnergyRegisters.CURRENT_HEATING_POWER),
+            ("total_energy_consumed", EnergyRegisters.TOTAL_ENERGY_CONSUMED),
+            ("total_heat_generated", EnergyRegisters.TOTAL_HEAT_GENERATED),
+            ("heating_energy", EnergyRegisters.HEATING_ENERGY),
+            ("hot_water_energy", EnergyRegisters.HOT_WATER_ENERGY),
+            ("cooling_energy", EnergyRegisters.COOLING_ENERGY),
+        ]
+        
+        for key, register_dict in energy_registers:
+            reg_def = get_register_definition(register_dict, software_version)
+            if reg_def:
+                value = await self._read_register_with_definition(reg_def)
+                if value is not None:
+                    data[key] = value
+        
+        # Read runtime and counter values
+        runtime_registers = [
+            ("compressor_runtime_total", RuntimeRegisters.COMPRESSOR_RUNTIME_TOTAL),
+            ("compressor_starts", RuntimeRegisters.COMPRESSOR_STARTS),
+            ("heating_runtime", RuntimeRegisters.HEATING_RUNTIME),
+            ("hot_water_runtime", RuntimeRegisters.HOT_WATER_RUNTIME),
+            ("cooling_runtime", RuntimeRegisters.COOLING_RUNTIME),
+            ("auxiliary_heater_runtime", RuntimeRegisters.AUXILIARY_HEATER_RUNTIME),
+            ("defrost_cycles", RuntimeRegisters.DEFROST_CYCLES),
+        ]
+        
+        for key, register_dict in runtime_registers:
+            reg_def = get_register_definition(register_dict, software_version)
+            if reg_def:
+                value = await self._read_register_with_definition(reg_def)
+                if value is not None:
+                    data[key] = value
+        
+        # Calculate COP if we have both power values
+        if "current_power_consumption" in data and "current_heating_power" in data:
+            power_in = data["current_power_consumption"]
+            power_out = data["current_heating_power"]
+            if power_in > 0:
+                data["cop"] = round(power_out / power_in, 2)
+        
+        _LOGGER.debug("Read operating data: %s", data)
+        return data

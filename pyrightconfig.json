@@ -9,9 +9,7 @@
   ],
   "reportMissingImports": true,
   "reportMissingTypeStubs": false,
+  "reportArgumentType": "none",
   "pythonVersion": "3.11",
   "pythonPlatform": "Darwin"
 }
-
-
-

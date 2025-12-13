@@ -147,7 +147,7 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 raise UpdateFailed("No data received from device")
 
             # Process status codes into readable strings
-            data = {
+            data: dict[str, Any] = {
                 "status_code": system_status.get("status_code", 0),
                 "lock_code": system_status.get("lock_code", 0),
                 "error_code": system_status.get("error_code", 0),
@@ -170,6 +170,16 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 if sensor_error:
                     data["sensor_error_code"] = sensor_error[0]
 
+            # Read operating data (temperatures, pressures, power, energy, runtime)
+            # This provides HA-compliant sensor data for InfluxDB/Grafana integration
+            async with asyncio.timeout(30):
+                operating_data = await self.client.read_operating_data(
+                    self.software_version
+                )
+            
+            # Merge operating data into main data dictionary
+            data.update(operating_data)
+
             _LOGGER.debug("Updated data from Dimplex device: %s", data)
             return data
 
@@ -185,4 +195,3 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_shutdown(self) -> None:
         """Shutdown the coordinator and disconnect."""
         await self.client.disconnect()
-
