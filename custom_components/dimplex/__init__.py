@@ -1,9 +1,12 @@
 """The Dimplex integration."""
 from __future__ import annotations
 
+import logging
+
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import (
     CONF_HOST,
@@ -21,6 +24,8 @@ from .const import (
 )
 from .coordinator import DimplexDataUpdateCoordinator
 
+_LOGGER = logging.getLogger(__name__)
+
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.CLIMATE,
@@ -29,8 +34,16 @@ PLATFORMS: list[Platform] = [
 ]
 
 
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Set up the Dimplex integration."""
+    # Integration is set up via config flow, so just return True
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Dimplex from a config entry."""
+    _LOGGER.debug("Setting up Dimplex integration for entry: %s", entry.entry_id)
+    
     # Get model and capabilities
     model = entry.data.get(CONF_MODEL, HeatPumpModel.GENERIC)
     model_caps = get_model_capabilities(model)
@@ -67,12 +80,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         capabilities=capabilities,
     )
 
-    await coordinator.async_config_entry_first_refresh()
+    # First refresh: if it fails, mark the entry as not-ready so HA retries setup.
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except ConfigEntryNotReady as err:
+        _LOGGER.warning(
+            "Failed to refresh data during setup for %s: %s",
+            entry.data.get(CONF_NAME, "Dimplex"),
+            err,
+        )
+        raise
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    _LOGGER.info(
+        "Dimplex integration setup complete for %s",
+        entry.data.get(CONF_NAME, "Dimplex"),
+    )
 
     # Register listener for options updates
     entry.async_on_unload(entry.add_update_listener(async_options_updated))

@@ -136,7 +136,7 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
             SettingsRegisters.HC1_COMFORT_SETPOINT,
             self.coordinator.software_version
         )
-        return reg_def is not None
+        return reg_def is not None and reg_def.address is not None
     
     def _has_mode_register(self) -> bool:
         """Check if operating mode register is configured."""

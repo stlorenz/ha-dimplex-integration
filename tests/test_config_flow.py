@@ -5,7 +5,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.data_entry_flow import FlowResultType
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dimplex.config_flow import (
     CannotConnect,
@@ -67,10 +69,11 @@ async def test_validate_input_connection_failure(hass: HomeAssistant):
 
 
 @pytest.mark.asyncio
-async def test_config_flow_step_user():
-    """Test config flow step user."""
+async def test_config_flow_step_user(hass: HomeAssistant):
+    """Test config flow shows the form."""
     flow = ConfigFlow()
-    flow.hass = AsyncMock()
+    flow.hass = hass
+    flow.context = {}
 
     result = await flow.async_step_user()
 
@@ -81,100 +84,138 @@ async def test_config_flow_step_user():
 
 
 @pytest.mark.asyncio
-async def test_config_flow_step_user_success():
+async def test_config_flow_step_user_success(hass: HomeAssistant):
     """Test config flow step user with successful validation."""
     flow = ConfigFlow()
-    flow.hass = AsyncMock()
+    flow.hass = hass
+    flow.context = {}
 
     with patch(
         "custom_components.dimplex.config_flow.validate_input",
-        return_value={"title": "Test Dimplex"},
+        new=AsyncMock(return_value={"title": "Test Dimplex"}),
     ):
-        with patch.object(flow, "async_create_entry", return_value={"type": "create_entry"}) as mock_create:
-            result = await flow.async_step_user(
+        result2 = await flow.async_step_user(
+            user_input={
+                CONF_HOST: "192.168.1.100",
+                CONF_PORT: 502,
+                CONF_NAME: "Test Dimplex",
+                CONF_MODEL: HeatPumpModel.LA1422C,
+            }
+        )
+
+    assert result2["type"] == FlowResultType.CREATE_ENTRY
+    assert result2["title"] == "Test Dimplex"
+    assert result2["data"][CONF_HOST] == "192.168.1.100"
+    assert result2["data"][CONF_PORT] == 502
+    assert result2["data"][CONF_NAME] == "Test Dimplex"
+    assert result2["data"][CONF_MODEL] == HeatPumpModel.LA1422C
+    assert result2["options"]["cooling_enabled"] is False
+    assert result2["options"]["dhw_enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_config_flow_step_user_cannot_connect(hass: HomeAssistant):
+    """Test config flow step user with connection error."""
+    flow = ConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+
+    with patch(
+        "custom_components.dimplex.config_flow.validate_input",
+        new=AsyncMock(side_effect=CannotConnect),
+    ):
+        result2 = await flow.async_step_user(
+            user_input={
+                CONF_HOST: "192.168.1.100",
+                CONF_PORT: 502,
+                CONF_NAME: "Test Dimplex",
+                CONF_MODEL: HeatPumpModel.LA1422C,
+            }
+        )
+
+    assert result2["type"] == FlowResultType.FORM
+    assert result2["errors"] == {"base": "cannot_connect"}
+
+
+@pytest.mark.asyncio
+async def test_config_flow_step_user_timeout(hass: HomeAssistant):
+    """Test config flow step user with timeout error."""
+    flow = ConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+
+    with patch(
+        "custom_components.dimplex.config_flow.validate_input",
+        new=AsyncMock(side_effect=TimeoutError("Connection timed out")),
+    ):
+        result2 = await flow.async_step_user(
+            user_input={
+                CONF_HOST: "192.168.1.100",
+                CONF_PORT: 502,
+                CONF_NAME: "Test Dimplex",
+                CONF_MODEL: HeatPumpModel.LA1422C,
+            }
+        )
+
+    assert result2["type"] == FlowResultType.FORM
+    assert result2["errors"] == {"base": "cannot_connect"}
+
+
+@pytest.mark.asyncio
+async def test_config_flow_step_user_unknown_error(hass: HomeAssistant):
+    """Test config flow step user with unknown error."""
+    flow = ConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+
+    with patch(
+        "custom_components.dimplex.config_flow.validate_input",
+        new=AsyncMock(side_effect=ValueError("Unknown error")),
+    ):
+        result2 = await flow.async_step_user(
+            user_input={
+                CONF_HOST: "192.168.1.100",
+                CONF_PORT: 502,
+                CONF_NAME: "Test Dimplex",
+                CONF_MODEL: HeatPumpModel.LA1422C,
+            }
+        )
+
+    assert result2["type"] == FlowResultType.FORM
+    assert result2["errors"] == {"base": "unknown"}
+
+
+@pytest.mark.asyncio
+async def test_config_flow_duplicate_aborts(hass: HomeAssistant):
+    """Test duplicate host/port aborts with already_configured."""
+    existing = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="192.168.1.100:502",
+        data={CONF_HOST: "192.168.1.100", CONF_PORT: 502},
+    )
+    existing.add_to_hass(hass)
+    assert (
+        hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, "192.168.1.100:502")
+        is not None
+    )
+
+    flow = ConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+    # Ensure handler is set for unique_id lookup (depends on HA internals)
+    if getattr(flow, "handler", None) != DOMAIN:
+        object.__setattr__(flow, "handler", DOMAIN)
+
+    with patch(
+        "custom_components.dimplex.config_flow.validate_input",
+        new=AsyncMock(return_value={"title": "Test Dimplex 2"}),
+    ):
+        with pytest.raises(AbortFlow, match="already_configured"):
+            await flow.async_step_user(
                 user_input={
                     CONF_HOST: "192.168.1.100",
                     CONF_PORT: 502,
-                    CONF_NAME: "Test Dimplex",
+                    CONF_NAME: "Test Dimplex 2",
                     CONF_MODEL: HeatPumpModel.LA1422C,
                 }
             )
-
-            # Verify create_entry was called with correct data including options
-            mock_create.assert_called_once()
-            call_kwargs = mock_create.call_args[1]
-            assert call_kwargs["title"] == "Test Dimplex"
-            assert call_kwargs["data"][CONF_HOST] == "192.168.1.100"
-            assert call_kwargs["data"][CONF_PORT] == 502
-            assert call_kwargs["data"][CONF_NAME] == "Test Dimplex"
-            assert call_kwargs["data"][CONF_MODEL] == HeatPumpModel.LA1422C
-            # Options should be set based on model defaults
-            assert "options" in call_kwargs
-            assert call_kwargs["options"]["cooling_enabled"] is False  # LA1422C default
-            assert call_kwargs["options"]["dhw_enabled"] is True
-
-
-@pytest.mark.asyncio
-async def test_config_flow_step_user_cannot_connect():
-    """Test config flow step user with connection error."""
-    flow = ConfigFlow()
-    flow.hass = AsyncMock()
-
-    with patch(
-        "custom_components.dimplex.config_flow.validate_input",
-        side_effect=CannotConnect,
-    ):
-        result = await flow.async_step_user(
-            user_input={
-                CONF_HOST: "192.168.1.100",
-                CONF_PORT: 502,
-                CONF_NAME: "Test Dimplex",
-            }
-        )
-
-        assert result["type"] == FlowResultType.FORM
-        assert result["errors"] == {"base": "cannot_connect"}
-
-
-@pytest.mark.asyncio
-async def test_config_flow_step_user_timeout():
-    """Test config flow step user with timeout error."""
-    flow = ConfigFlow()
-    flow.hass = AsyncMock()
-
-    with patch(
-        "custom_components.dimplex.config_flow.validate_input",
-        side_effect=TimeoutError("Connection timed out"),
-    ):
-        result = await flow.async_step_user(
-            user_input={
-                CONF_HOST: "192.168.1.100",
-                CONF_PORT: 502,
-                CONF_NAME: "Test Dimplex",
-            }
-        )
-
-        assert result["type"] == FlowResultType.FORM
-        assert result["errors"] == {"base": "cannot_connect"}
-
-
-@pytest.mark.asyncio
-async def test_config_flow_step_user_unknown_error():
-    """Test config flow step user with unknown error."""
-    flow = ConfigFlow()
-    flow.hass = AsyncMock()
-
-    with patch(
-        "custom_components.dimplex.config_flow.validate_input",
-        side_effect=ValueError("Unknown error"),
-    ):
-        result = await flow.async_step_user(
-            user_input={
-                CONF_HOST: "192.168.1.100",
-                CONF_PORT: 502,
-                CONF_NAME: "Test Dimplex",
-            }
-        )
-
-        assert result["type"] == FlowResultType.FORM
-        assert result["errors"] == {"base": "unknown"}

@@ -8,6 +8,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.data_entry_flow import AbortFlow
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
@@ -19,7 +20,6 @@ from .const import (
     DEFAULT_NAME,
     DEFAULT_PORT,
     DOMAIN,
-    MODEL_CAPABILITIES,
     MODEL_NAMES,
     OPT_COOLING_ENABLED,
     OPT_DHW_ENABLED,
@@ -92,7 +92,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         try:
+            host = user_input[CONF_HOST]
+            port = user_input.get(CONF_PORT, DEFAULT_PORT)
+            await self.async_set_unique_id(f"{host.lower()}:{port}")
+            self._abort_if_unique_id_configured()
+
             info = await validate_input(self.hass, user_input)
+        except AbortFlow:
+            # Let Home Assistant handle aborts (e.g. already_configured)
+            raise
         except CannotConnect:
             errors["base"] = "cannot_connect"
         except (OSError, TimeoutError) as err:
