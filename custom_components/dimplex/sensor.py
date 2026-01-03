@@ -29,6 +29,8 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import DimplexDataUpdateCoordinator
+from .modbus_registers import SoftwareVersion
+from .modbus_registers_extended import EnergyRegisters, get_register_definition
 from .modbus_registers import (
     LOCK_MESSAGES_LM,
     STATUS_MESSAGES_LM,
@@ -36,6 +38,20 @@ from .modbus_registers import (
     LOCK_MESSAGES_J,
     LOCK_MESSAGES_H,
 )
+
+_VERSION_DEPENDENT_SENSOR_REGISTERS: dict[str, dict[SoftwareVersion, Any]] = {
+    # Power / energy datapoints depend on software version mappings (some are None on H).
+    "current_power_consumption": EnergyRegisters.CURRENT_POWER_CONSUMPTION,
+    "current_heating_power": EnergyRegisters.CURRENT_HEATING_POWER,
+    "pv_surplus": EnergyRegisters.PV_SURPLUS,
+    "total_energy_consumed": EnergyRegisters.TOTAL_ENERGY_CONSUMED,
+    "total_heat_generated": EnergyRegisters.TOTAL_HEAT_GENERATED,
+    "heating_energy": EnergyRegisters.HEATING_ENERGY,
+    "hot_water_energy": EnergyRegisters.HOT_WATER_ENERGY,
+    "cooling_energy": EnergyRegisters.COOLING_ENERGY,
+    "pool_energy": EnergyRegisters.POOL_ENERGY,
+    "environmental_energy": EnergyRegisters.ENVIRONMENTAL_ENERGY,
+}
 
 
 def _get_all_status_options() -> list[str]:
@@ -346,6 +362,18 @@ POWER_ENERGY_SENSOR_TYPES: tuple[DimplexSensorEntityDescription, ...] = (
         value_fn=lambda data: data.get("current_heating_power"),
     ),
     DimplexSensorEntityDescription(
+        key="pv_surplus",
+        translation_key="pv_surplus",
+        name="PV Surplus",
+        icon="mdi:solar-power",
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.get("pv_surplus"),
+    ),
+    DimplexSensorEntityDescription(
         key="total_energy_consumed",
         translation_key="total_energy_consumed",
         name="Total Energy Consumed",
@@ -399,6 +427,28 @@ POWER_ENERGY_SENSOR_TYPES: tuple[DimplexSensorEntityDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         suggested_display_precision=1,
         value_fn=lambda data: data.get("cooling_energy"),
+    ),
+    DimplexSensorEntityDescription(
+        key="pool_energy",
+        translation_key="pool_energy",
+        name="Pool Energy",
+        icon="mdi:pool",
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=0,
+        value_fn=lambda data: data.get("pool_energy"),
+    ),
+    DimplexSensorEntityDescription(
+        key="environmental_energy",
+        translation_key="environmental_energy",
+        name="Environmental Energy",
+        icon="mdi:leaf",
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=0,
+        value_fn=lambda data: data.get("environmental_energy"),
     ),
     DimplexSensorEntityDescription(
         key="cop",
@@ -519,8 +569,23 @@ async def async_setup_entry(
         if description.key == "sensor_error_code" and "sensor_error_code" not in coordinator.data:
             continue
 
+        # Skip sensors that are not supported by the current software version
+        # (prevents always-unavailable entities for version-specific registers).
+        sw_version = getattr(coordinator, "software_version", None)
+        register_dict = _VERSION_DEPENDENT_SENSOR_REGISTERS.get(description.key)
+        if (
+            register_dict is not None
+            and isinstance(sw_version, SoftwareVersion)
+            and get_register_definition(register_dict, sw_version) is None
+        ):
+            continue
+
         # Skip cooling-related sensors if cooling is not enabled
         if description.key in ("cooling_energy", "cooling_runtime") and not coordinator.cooling_enabled:
+            continue
+
+        # Skip pool-related sensors if pool is not enabled
+        if description.key == "pool_energy" and not coordinator.pool_enabled:
             continue
 
         # Skip brine pressure if not a brine system

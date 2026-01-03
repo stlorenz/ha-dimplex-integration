@@ -125,6 +125,15 @@
       },
       "sensor_error_code": {
         "name": "Sensor Error Code"
+      },
+      "pv_surplus": {
+        "name": "PV Surplus"
+      },
+      "pool_energy": {
+        "name": "Pool Energy"
+      },
+      "environmental_energy": {
+        "name": "Environmental Energy"
       }
     },
     "binary_sensor": {

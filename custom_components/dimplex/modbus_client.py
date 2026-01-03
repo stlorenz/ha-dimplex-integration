@@ -306,12 +306,19 @@ class DimplexModbusClient:
         if result is None:
             return None
             
-        # Combine registers for 32-bit values
+        # Custom decoder (used e.g. for BCD-packed multi-word counters)
+        if register_def.decoder is not None:
+            decoded = register_def.decoder(result)
+            if decoded is None:
+                return None
+            return float(decoded) * register_def.scale
+
+        # Default decoding: 16-bit or 32-bit.
         if count == 2:
             raw_value = read_32bit_value(result)
         else:
             raw_value = result[0]
-            
+
         return scale_value(raw_value, register_def)
 
     async def read_operating_data(
@@ -370,11 +377,14 @@ class DimplexModbusClient:
         energy_registers = [
             ("current_power_consumption", EnergyRegisters.CURRENT_POWER_CONSUMPTION),
             ("current_heating_power", EnergyRegisters.CURRENT_HEATING_POWER),
+            ("pv_surplus", EnergyRegisters.PV_SURPLUS),
             ("total_energy_consumed", EnergyRegisters.TOTAL_ENERGY_CONSUMED),
             ("total_heat_generated", EnergyRegisters.TOTAL_HEAT_GENERATED),
             ("heating_energy", EnergyRegisters.HEATING_ENERGY),
             ("hot_water_energy", EnergyRegisters.HOT_WATER_ENERGY),
             ("cooling_energy", EnergyRegisters.COOLING_ENERGY),
+            ("pool_energy", EnergyRegisters.POOL_ENERGY),
+            ("environmental_energy", EnergyRegisters.ENVIRONMENTAL_ENERGY),
         ]
         
         for key, register_dict in energy_registers:

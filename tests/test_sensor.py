@@ -9,6 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from custom_components.dimplex.const import DOMAIN
+from custom_components.dimplex.modbus_registers import SoftwareVersion
 from custom_components.dimplex.sensor import DimplexSensor, async_setup_entry
 
 
@@ -36,6 +37,36 @@ async def test_sensor_setup(
     # Should create 6 sensors (status, status_code, lock, lock_code, error_code, sensor_error_code)
     # Note: sensor_error_code may not be created if not in coordinator data
     assert len(entities_added) >= 5
+
+
+@pytest.mark.asyncio
+async def test_version_dependent_sensors_skipped_for_h(
+    hass: HomeAssistant,
+    mock_dimplex_coordinator: AsyncMock,
+    mock_config_entry: dict,
+):
+    """Ensure version-dependent sensors are not created for unsupported versions."""
+    config_entry = Mock()
+    config_entry.entry_id = mock_config_entry["entry_id"]
+    config_entry.data = mock_config_entry["data"]
+
+    # Simulate old software version H (many extended registers are not available).
+    mock_dimplex_coordinator.software_version = SoftwareVersion.H
+    mock_dimplex_coordinator.pool_enabled = True  # would otherwise skip pool_energy earlier
+
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][config_entry.entry_id] = mock_dimplex_coordinator
+
+    entities_added: list[DimplexSensor] = []
+
+    def mock_add_entities(entities):
+        entities_added.extend(entities)
+
+    await async_setup_entry(hass, config_entry, mock_add_entities)
+
+    keys = {e.entity_description.key for e in entities_added}
+    assert "pv_surplus" not in keys
+    assert "environmental_energy" not in keys
 
 
 @pytest.mark.asyncio

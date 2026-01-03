@@ -23,6 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, IntEnum
 from typing import Final
+from collections.abc import Callable
 
 from .modbus_registers import SoftwareVersion
 
@@ -45,6 +46,9 @@ class RegisterDefinition:
     
     unit: str = ""
     """Unit of the value after scaling"""
+
+    decoder: Callable[[list[int]], int | float | None] | None = None
+    """Optional decoder for multi-register values (overrides default decoding)."""
 
 
 class RegisterType(Enum):
@@ -294,6 +298,26 @@ class RuntimeRegisters:
     }
 
 
+def decode_digits_12(registers: list[int]) -> int | None:
+    """Decode a 12-digit counter split across 3 uint16 registers.
+
+    Dimplex documentation often labels these as "1-4 / 5-8 / 9-12" and the
+    datapoint type is uint16. In practice, each register contains a 4-digit
+    *decimal chunk* (0..9999), not BCD nibbles.
+
+    The 3 registers form a base-10,000 number:
+      value = (reg_9_12 * 10^8) + (reg_5_8 * 10^4) + reg_1_4
+    """
+    if len(registers) < 3:
+        return None
+
+    low, mid, high = registers[0], registers[1], registers[2]
+    if any(r < 0 or r > 9999 for r in (low, mid, high)):
+        return None
+
+    return (high * 100_000_000) + (mid * 10_000) + low
+
+
 # Heat and Energy Quantities (Wärme- und Energiemengen)
 class EnergyRegisters:
     """Energy and heat quantity register addresses.
@@ -302,18 +326,33 @@ class EnergyRegisters:
     Energy values are in kWh (may use 2 registers for 32-bit values).
     """
 
-    # Current power consumption (electrical input power in W)
+    # Current power consumption (electrical input power)
+    #
+    # Docs (WPM software J/L/M, "Leistungen und Überschuss"):
+    # - Leist_Elekt: 5170, unit W/10 (so scale 0.1 to get W)
     CURRENT_POWER_CONSUMPTION: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=70, scale=1.0, unit="W", signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=70, scale=1.0, unit="W", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=70, scale=1.0, unit="W", signed=False),
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=5170, scale=0.1, unit="W", signed=True),
+        SoftwareVersion.L_M: RegisterDefinition(address=5170, scale=0.1, unit="W", signed=True),
     }
 
-    # Current heating power (thermal output power in W)
+    # Current heating power (thermal output power)
+    #
+    # Docs (WPM software J/L/M, "Leistungen und Überschuss"):
+    # - Leist_Heiz: 5168, unit W/10 (so scale 0.1 to get W)
     CURRENT_HEATING_POWER: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=71, scale=1.0, unit="W", signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=71, scale=1.0, unit="W", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=71, scale=1.0, unit="W", signed=False),
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=5168, scale=0.1, unit="W", signed=True),
+        SoftwareVersion.L_M: RegisterDefinition(address=5168, scale=0.1, unit="W", signed=True),
+    }
+
+    # PV surplus (Smart Grid) - value is currently only recorded, no function behind it
+    # Docs (WPM software J/L/M):
+    # - PV_Ueberschuss: 5182, unit W/10, R/W
+    PV_SURPLUS: dict[SoftwareVersion, RegisterDefinition] = {
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=5182, scale=0.1, unit="W", signed=True),
+        SoftwareVersion.L_M: RegisterDefinition(address=5182, scale=0.1, unit="W", signed=True),
     }
 
     # Total electrical energy consumed (kWh, 32-bit)
@@ -330,18 +369,47 @@ class EnergyRegisters:
         SoftwareVersion.L_M: RegisterDefinition(address=82, scale=0.1, unit="kWh", size=2, signed=False),
     }
 
-    # Heating energy (kWh, 32-bit)
+    # NOTE: Heat quantity counters on WPM J/L/M are exposed as 12-digit counters split
+    # into 3x uint16 words ("1-4", "5-8", "9-12") where each nibble is a BCD digit.
+    # Example: [0x0000, 0x0123, 0x4567] => "000001234567" kWh.
+    #
+    # Documentation snippet (WPM J/L/M):
+    # - Wärmemenge Heizen 1-4: 5096
+    # - Wärmemenge Heizen 5-8: 5097
+    # - Wärmemenge Heizen 9-12: 5098
+    #
+    # - Wärmemenge Warmwasser 1-4: 5099
+    # - Wärmemenge Warmwasser 5-8: 5100
+    # - Wärmemenge Warmwasser 9-12: 5101
+    #
+    # - Wärmemenge Schwimmbad 1-4: 5102
+    # - Wärmemenge Schwimmbad 5-8: 5103
+    # - Wärmemenge Schwimmbad 9-12: 5104
+    #
+    # - Umweltenergie 1-4: 5127
+    # - Umweltenergie 5-8: 5128
+    # - Umweltenergie 9-12: 5129
+    #
+    # Heating energy (kWh, 12-digit BCD across 3 registers on J/L/M)
     HEATING_ENERGY: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=84, scale=0.1, unit="kWh", size=2, signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=84, scale=0.1, unit="kWh", size=2, signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=84, scale=0.1, unit="kWh", size=2, signed=False),
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(
+            address=5096, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
+        ),
+        SoftwareVersion.L_M: RegisterDefinition(
+            address=5096, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
+        ),
     }
 
-    # Hot water energy (kWh, 32-bit)
+    # Hot water energy (kWh, 12-digit BCD across 3 registers on J/L/M)
     HOT_WATER_ENERGY: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=86, scale=0.1, unit="kWh", size=2, signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=86, scale=0.1, unit="kWh", size=2, signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=86, scale=0.1, unit="kWh", size=2, signed=False),
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(
+            address=5099, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
+        ),
+        SoftwareVersion.L_M: RegisterDefinition(
+            address=5099, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
+        ),
     }
 
     # Cooling energy (kWh, 32-bit)
@@ -349,6 +417,28 @@ class EnergyRegisters:
         SoftwareVersion.H: RegisterDefinition(address=88, scale=0.1, unit="kWh", size=2, signed=False),
         SoftwareVersion.J: RegisterDefinition(address=88, scale=0.1, unit="kWh", size=2, signed=False),
         SoftwareVersion.L_M: RegisterDefinition(address=88, scale=0.1, unit="kWh", size=2, signed=False),
+    }
+
+    # Pool energy (kWh, 12-digit BCD across 3 registers on J/L/M)
+    POOL_ENERGY: dict[SoftwareVersion, RegisterDefinition] = {
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(
+            address=5102, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
+        ),
+        SoftwareVersion.L_M: RegisterDefinition(
+            address=5102, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
+        ),
+    }
+
+    # Environmental/source energy (kWh, 12-digit BCD across 3 registers on J/L/M)
+    ENVIRONMENTAL_ENERGY: dict[SoftwareVersion, RegisterDefinition] = {
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(
+            address=5127, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
+        ),
+        SoftwareVersion.L_M: RegisterDefinition(
+            address=5127, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
+        ),
     }
 
 
