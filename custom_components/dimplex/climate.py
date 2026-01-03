@@ -18,6 +18,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import CONF_NAME, DOMAIN
 from .coordinator import DimplexDataUpdateCoordinator
 from .modbus_registers_extended import (
+    OperatingMode,
     OperatingModeRegisters,
     SettingsRegisters,
     get_register_definition,
@@ -101,12 +102,12 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
         # Only enable temperature control if register is configured
         if self._has_temperature_register():
             features |= ClimateEntityFeature.TARGET_TEMPERATURE
-        
-        # Only enable on/off control if mode register is configured
-        if self._has_mode_register():
-            features |= ClimateEntityFeature.TURN_OFF
-            features |= ClimateEntityFeature.TURN_ON
-        
+
+        # NOTE:
+        # `OperatingModeRegisters.CURRENT_MODE` (register 5015, "Betriebsmodus")
+        # does not provide a true "OFF" state. Therefore we intentionally do NOT
+        # advertise TURN_ON/TURN_OFF support here; the integration only supports
+        # switching between operational modes (e.g. Winter/Kühlen) when available.
         return features
 
     @property
@@ -114,6 +115,11 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
         """Return the list of available HVAC modes based on device capabilities.
         
         Only shows controllable modes if the mode register is configured.
+
+        Important: The device register used for mode control (Betriebsmodus) has
+        no explicit "Off" mode. To avoid misleading users, we only include OFF
+        as a *display* option when the device is currently off, but we don't
+        offer OFF as a selectable target when the device is running.
         """
         # If mode register isn't configured, we can only show what we observe
         # but can't actually control it
@@ -121,12 +127,16 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
             # Return current mode only - no control available
             current = self.hvac_mode
             return [current] if current else [HVACMode.OFF]
-        
-        modes = [HVACMode.OFF, HVACMode.HEAT]
+
+        modes: list[HVACMode] = [HVACMode.HEAT]
         
         # Only add cooling mode if it's enabled in this installation
         if self.coordinator.cooling_enabled:
             modes.append(HVACMode.COOL)
+
+        # Include OFF only if it's the currently observed mode (display-only).
+        if self.hvac_mode == HVACMode.OFF:
+            modes.insert(0, HVACMode.OFF)
         
         return modes
     
@@ -272,6 +282,15 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
                 "This is a development issue - see modbus_registers_extended.py"
             )
             return
+
+        # The configured register is "Betriebsmodus" (season/system mode) and
+        # does not provide a true OFF state. Avoid mapping OFF to "Sommer".
+        if hvac_mode == HVACMode.OFF:
+            _LOGGER.warning(
+                "Cannot set HVAC mode to OFF via Betriebsmodus register. "
+                "No true OFF value is available for this control path."
+            )
+            return
             
         if not self.coordinator.write_enabled:
             _LOGGER.warning(
@@ -295,9 +314,12 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
 
         # Map HVAC mode to device operating mode
         mode_map = {
-            HVACMode.OFF: 0,
-            HVACMode.HEAT: 1,
-            HVACMode.COOL: 2,
+            # The device "Betriebsmodus" is a system mode (Sommer/Winter/Kühlen…),
+            # not a simple OFF/HEAT/COOL enum. We map HA HVAC modes to the
+            # closest matching Betriebsmodus values.
+            HVACMode.OFF: int(OperatingMode.SUMMER),
+            HVACMode.HEAT: int(OperatingMode.WINTER),
+            HVACMode.COOL: int(OperatingMode.COOLING),
         }
 
         mode_value = mode_map.get(hvac_mode)

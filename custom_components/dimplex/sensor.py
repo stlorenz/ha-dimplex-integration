@@ -571,6 +571,22 @@ class DimplexSensor(CoordinatorEntity[DimplexDataUpdateCoordinator], SensorEntit
         # (and not only after the first coordinator refresh callback).
         self._sync_from_coordinator()
 
+    @property
+    def available(self) -> bool:
+        """Return if entity is available.
+
+        CoordinatorEntity.available only reflects the last update success.
+        For this integration we also gate availability on the coordinator's
+        connection flag.
+        """
+        data = self.coordinator.data
+        return (
+            super().available
+            and data is not None
+            and data.get("connected", False)
+            and getattr(self, "_attr_available", True)
+        )
+
     def _sync_from_coordinator(self) -> None:
         """Sync dynamic state from coordinator into _attr_* fields."""
         desc = self._description

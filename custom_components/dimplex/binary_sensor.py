@@ -1,5 +1,6 @@
 """Binary sensor platform for Dimplex integration."""
 # pyright: reportIncompatibleVariableOverride=false
+# pylint: disable=unexpected-keyword-arg
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -123,6 +124,22 @@ class DimplexBinarySensor(
 
         # Initialize dynamic attributes immediately.
         self._sync_from_coordinator()
+
+    @property
+    def available(self) -> bool:
+        """Return if entity is available.
+
+        CoordinatorEntity.available only reflects the last update success.
+        For this integration we also gate availability on the coordinator's
+        connection flag.
+        """
+        data = self.coordinator.data
+        return (
+            super().available
+            and data is not None
+            and data.get("connected", False)
+            and getattr(self, "_attr_available", True)
+        )
 
     def _sync_from_coordinator(self) -> None:
         """Sync dynamic state from coordinator into _attr_* fields."""

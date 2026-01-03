@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 from homeassistant.components.climate import ClimateEntityFeature, HVACMode
@@ -56,8 +56,10 @@ def test_supported_features_enabled_when_registers_available():
     ent = DimplexClimate(coordinator, entry)  # type: ignore[arg-type]
 
     assert ent.supported_features & ClimateEntityFeature.TARGET_TEMPERATURE
-    assert ent.supported_features & ClimateEntityFeature.TURN_ON
-    assert ent.supported_features & ClimateEntityFeature.TURN_OFF
+    # Betriebsmodus (5015) has no true OFF state, so we don't advertise
+    # TURN_ON/TURN_OFF support via the climate entity.
+    assert not (ent.supported_features & ClimateEntityFeature.TURN_ON)
+    assert not (ent.supported_features & ClimateEntityFeature.TURN_OFF)
     assert ent.hvac_modes == [HVACMode.OFF, HVACMode.HEAT, HVACMode.COOL]
 
 
@@ -73,7 +75,7 @@ async def test_set_temperature_writes_register_when_enabled():
     await ent.async_set_temperature(temperature=22.5)
 
     coordinator.client.write_register.assert_awaited_once()
-    args, kwargs = coordinator.client.write_register.await_args
+    _, kwargs = coordinator.client.write_register.await_args
     assert kwargs["address"] == 200  # HC1_COMFORT_SETPOINT for L/M
     assert kwargs["value"] == 225
     coordinator.async_request_refresh.assert_awaited_once()

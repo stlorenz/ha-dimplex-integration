@@ -21,7 +21,7 @@ Energy values may span 2 registers (32-bit).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Final
 
 from .modbus_registers import SoftwareVersion
@@ -60,35 +60,65 @@ class RegisterType(Enum):
     BOOLEAN = "boolean"
 
 
+class OperatingMode(IntEnum):
+    """Operating mode values for register 5015 (Betriebsmodus).
+
+    Documentation (WPM Software J/L/M):
+      0: Sommer
+      1: Winter
+      2: Urlaub
+      3: Party
+      4: 2. Wärmeerzeuger
+      5: Kühlen
+    """
+
+    SUMMER = 0
+    WINTER = 1
+    VACATION = 2
+    PARTY = 3
+    SECOND_HEAT_GENERATOR = 4
+    COOLING = 5
+
+
 # Operating Mode Registers (Betriebsmodus)
 class OperatingModeRegisters:
     """Operating mode register addresses.
     
     These registers control the operating mode of the heat pump.
+
+    Note: The operating mode is a VALUE written to register 5015 (not a
+    software-version-specific "mode"). The register availability varies by
+    software version.
     """
 
     CURRENT_MODE = {
         SoftwareVersion.H: None,
-        SoftwareVersion.J: None,
-        SoftwareVersion.L_M: 1,  # Register 1: Current operating mode (R/W)
+        SoftwareVersion.J: 5015,  # Betriebsmodus (R/W), values: see OperatingMode
+        SoftwareVersion.L_M: 5015,  # Betriebsmodus (R/W), values: see OperatingMode
     }
 
-    MODE_HEATING = {
+    PARTY_HOURS = {
         SoftwareVersion.H: None,
-        SoftwareVersion.J: None,
-        SoftwareVersion.L_M: 2,  # Register 2: Heating mode enabled
+        SoftwareVersion.J: 5016,  # Anzahl Partystunden (0..72) [hour]
+        SoftwareVersion.L_M: 5016,  # Anzahl Partystunden (0..72) [hour]
     }
 
-    MODE_COOLING = {
+    VACATION_DAYS = {
         SoftwareVersion.H: None,
-        SoftwareVersion.J: None,
-        SoftwareVersion.L_M: 3,  # Register 3: Cooling mode enabled
+        SoftwareVersion.J: 5017,  # Anzahl Urlaubstage (0..150) [day]
+        SoftwareVersion.L_M: 5017,  # Anzahl Urlaubstage (0..150) [day]
     }
 
-    MODE_HOT_WATER = {
+    VENTILATION_STAGE = {
         SoftwareVersion.H: None,
-        SoftwareVersion.J: None,
-        SoftwareVersion.L_M: 4,  # Register 4: Hot water mode enabled
+        SoftwareVersion.J: 5034,  # Lüftung Stufen (0..5)
+        SoftwareVersion.L_M: 5034,  # Lüftung Stufen (0..5)
+    }
+
+    BOOST_VENTILATION_TIME = {
+        SoftwareVersion.H: None,
+        SoftwareVersion.J: 127,  # Zeitwert Stoßlüften (15..90)
+        SoftwareVersion.L_M: 127,  # Zeitwert Stoßlüften (15..90)
     }
 
 
