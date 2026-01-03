@@ -79,7 +79,7 @@ async def test_read_holding_registers_success():
         
         assert result == [100, 200]
         mock_instance.read_holding_registers.assert_called_once_with(
-            address=103, count=2, slave=1
+            address=103, count=2, device_id=1
         )
 
 
@@ -160,7 +160,7 @@ async def test_write_register_success():
         
         assert result is True
         mock_instance.write_register.assert_called_once_with(
-            address=200, value=50, slave=1
+            address=200, value=50, device_id=1
         )
 
 
@@ -197,7 +197,7 @@ async def test_read_system_status():
         mock_instance.connected = True
         
         # Mock different responses for different registers
-        async def mock_read(address, count, slave=1):
+        async def mock_read(address, count, device_id=1):
             mock_response = Mock()
             mock_response.isError.return_value = False
             if address == 103:  # Status

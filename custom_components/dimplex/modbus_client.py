@@ -39,6 +39,40 @@ class DimplexModbusClient:
         self.port = port
         self._client: AsyncModbusTcpClient | None = None
         self._connected = False
+        # pymodbus renamed the slave/unit parameter over time.
+        # Cache which kw name works for this runtime ("device_id", "unit", "slave").
+        self._unit_id_kw: str | None = None
+
+    async def _call_with_unit_id(
+        self,
+        method: Any,
+        /,
+        *args: Any,
+        unit_id: int = 1,
+        **kwargs: Any,
+    ) -> Any:
+        """Call a pymodbus method using the correct unit/slave/device id kw.
+
+        - pymodbus 2.x: "unit"
+        - older 3.x variants: "slave"
+        - recent 3.x: "device_id"
+        """
+        if self._unit_id_kw is not None:
+            return await method(*args, **kwargs, **{self._unit_id_kw: unit_id})
+
+        for candidate in ("device_id", "unit", "slave"):
+            try:
+                result = await method(*args, **kwargs, **{candidate: unit_id})
+            except TypeError as err:
+                msg = str(err)
+                if f"unexpected keyword argument '{candidate}'" in msg:
+                    continue
+                raise
+            else:
+                self._unit_id_kw = candidate
+                return result
+
+        raise TypeError("Unable to determine pymodbus unit/slave keyword")
 
     async def connect(self) -> bool:
         """Connect to the Modbus device.
@@ -102,10 +136,11 @@ class DimplexModbusClient:
             return None
 
         try:
-            result = await self._client.read_holding_registers(
+            result = await self._call_with_unit_id(
+                self._client.read_holding_registers,
                 address=address,
                 count=count,
-                slave=slave,
+                unit_id=slave,
             )
 
             if result.isError():
@@ -140,10 +175,11 @@ class DimplexModbusClient:
             return None
 
         try:
-            result = await self._client.read_input_registers(
+            result = await self._call_with_unit_id(
+                self._client.read_input_registers,
                 address=address,
                 count=count,
-                slave=slave,
+                unit_id=slave,
             )
 
             if result.isError():
@@ -178,10 +214,11 @@ class DimplexModbusClient:
             return False
 
         try:
-            result = await self._client.write_register(
+            result = await self._call_with_unit_id(
+                self._client.write_register,
                 address=address,
                 value=value,
-                slave=slave,
+                unit_id=slave,
             )
 
             if result.isError():
@@ -262,7 +299,9 @@ class DimplexModbusClient:
             return None
             
         count = register_def.size
-        result = await self.read_holding_registers(register_def.address, count=count, slave=slave)
+        # Pass unit id positionally to avoid keyword name churn ("slave"/"unit"/"device_id")
+        # and to satisfy stricter type checkers.
+        result = await self.read_holding_registers(register_def.address, count, slave)
         
         if result is None:
             return None
