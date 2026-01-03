@@ -329,30 +329,39 @@ class EnergyRegisters:
     # Current power consumption (electrical input power)
     #
     # Docs (WPM software J/L/M, "Leistungen und Überschuss"):
-    # - Leist_Elekt: 5170, unit W/10 (so scale 0.1 to get W)
+    # - Leist_Elekt: 5170, unit W/10
+    #
+    # In practice this means the raw int16 value is in 10 W steps:
+    #   watts = raw * 10
     CURRENT_POWER_CONSUMPTION: dict[SoftwareVersion, RegisterDefinition] = {
         SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=5170, scale=0.1, unit="W", signed=True),
-        SoftwareVersion.L_M: RegisterDefinition(address=5170, scale=0.1, unit="W", signed=True),
+        SoftwareVersion.J: RegisterDefinition(address=5170, scale=10.0, unit="W", signed=True),
+        SoftwareVersion.L_M: RegisterDefinition(address=5170, scale=10.0, unit="W", signed=True),
     }
 
     # Current heating power (thermal output power)
     #
     # Docs (WPM software J/L/M, "Leistungen und Überschuss"):
-    # - Leist_Heiz: 5168, unit W/10 (so scale 0.1 to get W)
+    # - Leist_Heiz: 5168, unit W/10
+    #
+    # In practice this means the raw int16 value is in 10 W steps:
+    #   watts = raw * 10
     CURRENT_HEATING_POWER: dict[SoftwareVersion, RegisterDefinition] = {
         SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=5168, scale=0.1, unit="W", signed=True),
-        SoftwareVersion.L_M: RegisterDefinition(address=5168, scale=0.1, unit="W", signed=True),
+        SoftwareVersion.J: RegisterDefinition(address=5168, scale=10.0, unit="W", signed=True),
+        SoftwareVersion.L_M: RegisterDefinition(address=5168, scale=10.0, unit="W", signed=True),
     }
 
     # PV surplus (Smart Grid) - value is currently only recorded, no function behind it
     # Docs (WPM software J/L/M):
     # - PV_Ueberschuss: 5182, unit W/10, R/W
+    #
+    # Same scaling as above:
+    #   watts = raw * 10
     PV_SURPLUS: dict[SoftwareVersion, RegisterDefinition] = {
         SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=5182, scale=0.1, unit="W", signed=True),
-        SoftwareVersion.L_M: RegisterDefinition(address=5182, scale=0.1, unit="W", signed=True),
+        SoftwareVersion.J: RegisterDefinition(address=5182, scale=10.0, unit="W", signed=True),
+        SoftwareVersion.L_M: RegisterDefinition(address=5182, scale=10.0, unit="W", signed=True),
     }
 
     # Total electrical energy consumed (kWh, 32-bit)
