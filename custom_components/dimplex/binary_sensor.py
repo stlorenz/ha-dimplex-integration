@@ -1,9 +1,10 @@
 """Binary sensor platform for Dimplex integration."""
+# pyright: reportIncompatibleVariableOverride=false
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
@@ -14,13 +15,14 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import UNDEFINED
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import DimplexDataUpdateCoordinator
 
 
-@dataclass
+@dataclass(frozen=True)
 class DimplexBinarySensorEntityDescription(BinarySensorEntityDescription):
     """Describes Dimplex binary sensor entity."""
 
@@ -92,7 +94,7 @@ class DimplexBinarySensor(
 ):
     """Representation of a Dimplex binary sensor."""
 
-    entity_description: DimplexBinarySensorEntityDescription
+    _attr_has_entity_name = True
 
     def __init__(
         self,
@@ -102,6 +104,7 @@ class DimplexBinarySensor(
     ) -> None:
         """Initialize the binary sensor."""
         super().__init__(coordinator)
+        self._description = description
         self.entity_description = description
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
@@ -111,38 +114,37 @@ class DimplexBinarySensor(
             "manufacturer": "Dimplex",
             "model": coordinator.model_name,
         }
-
-    @property
-    def name(self) -> str:
-        """Return the name of the binary sensor."""
-        # Get device name from coordinator data or entry data
-        if self.coordinator.data:
-            device_name = self.coordinator.data.get("name")
+        # Use Home Assistant's naming model (see Sensor impl for details).
+        desc_name = self._description.name
+        if desc_name is UNDEFINED or desc_name is None:
+            self._attr_name = self._description.key.replace("_", " ").title()
         else:
-            device_name = None
-        if not device_name:
-            device_name = self._entry.data.get("name", "Dimplex")
-        
-        # Get entity name from translation or description
-        entity_name = self.entity_description.name or self.entity_description.key.replace("_", " ").title()
-        return f"{device_name} {entity_name}"
+            self._attr_name = cast(str, desc_name)
 
-    @property
-    def is_on(self) -> bool | None:
-        """Return the state of the binary sensor."""
-        if self.entity_description.value_fn is None:
-            return None
-        if self.coordinator.data is None:
-            return None
-        return self.entity_description.value_fn(self.coordinator.data)
+        # Initialize dynamic attributes immediately.
+        self._sync_from_coordinator()
 
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return (
-            super().available
-            and self.coordinator.data is not None
-            and self.coordinator.data.get("connected", False)
-            and self.entity_description.value_fn is not None
-        )
+    def _sync_from_coordinator(self) -> None:
+        """Sync dynamic state from coordinator into _attr_* fields."""
+        desc = self._description
+        data = self.coordinator.data
+
+        self._attr_is_on = None
+        self._attr_available = False
+
+        if (
+            not self.coordinator.last_update_success
+            or data is None
+            or not data.get("connected", False)
+            or desc.value_fn is None
+        ):
+            return
+
+        self._attr_is_on = desc.value_fn(data)
+        self._attr_available = True
+
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self._sync_from_coordinator()
+        super()._handle_coordinator_update()
 

@@ -61,7 +61,7 @@ async def test_error_active_sensor(
     )
     
     assert sensor.unique_id == f"{config_entry.entry_id}_error_active"
-    assert sensor.name == "Test Dimplex Error Active"
+    assert sensor.name == "Error Active"
     assert sensor.is_on is False  # error_code is 0
     assert sensor.available is True
     assert sensor.entity_description.device_class == BinarySensorDeviceClass.PROBLEM

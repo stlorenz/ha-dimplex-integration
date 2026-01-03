@@ -58,7 +58,7 @@ async def test_sensor_status(
     sensor = DimplexSensor(mock_dimplex_coordinator, config_entry, status_description)
     
     assert sensor.unique_id == f"{config_entry.entry_id}_status"
-    assert sensor.name == "Test Dimplex Status"
+    assert sensor.name == "Status"
     # native_value returns the raw enum value, not translated
     assert sensor.native_value == "heating"
     assert sensor.available is True
@@ -108,7 +108,7 @@ async def test_sensor_lock(
     sensor = DimplexSensor(mock_dimplex_coordinator, config_entry, lock_description)
     
     assert sensor.unique_id == f"{config_entry.entry_id}_lock"
-    assert sensor.name == "Test Dimplex Lock Status"
+    assert sensor.name == "Lock Status"
     # native_value returns the raw enum value, not translated
     assert sensor.native_value == "none"
     assert sensor.available is True

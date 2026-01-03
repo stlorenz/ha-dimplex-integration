@@ -1,10 +1,11 @@
 """Sensor platform for Dimplex integration."""
 # pyright: reportArgumentType=false
+# pyright: reportIncompatibleVariableOverride=false
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -23,6 +24,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import UNDEFINED
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
@@ -51,7 +53,7 @@ def _get_all_lock_options() -> list[str]:
     return sorted(options)
 
 
-@dataclass
+@dataclass(frozen=True)
 class DimplexSensorEntityDescription(SensorEntityDescription):
     """Describes Dimplex sensor entity."""
 
@@ -537,7 +539,6 @@ async def async_setup_entry(
 class DimplexSensor(CoordinatorEntity[DimplexDataUpdateCoordinator], SensorEntity):
     """Representation of a Dimplex sensor."""
 
-    entity_description: DimplexSensorEntityDescription
     _attr_has_entity_name = True
 
     def __init__(
@@ -548,6 +549,7 @@ class DimplexSensor(CoordinatorEntity[DimplexDataUpdateCoordinator], SensorEntit
     ) -> None:
         """Initialize the sensor."""
         super().__init__(coordinator)
+        self._description = description
         self.entity_description = description
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
@@ -557,82 +559,68 @@ class DimplexSensor(CoordinatorEntity[DimplexDataUpdateCoordinator], SensorEntit
             "manufacturer": "Dimplex",
             "model": coordinator.model_name,
         }
-
-    @property
-    def name(self) -> str:
-        """Return the name of the sensor."""
-        # Get device name from coordinator data or entry data
-        if self.coordinator.data:
-            device_name = self.coordinator.data.get("name")
+        # Use Home Assistant's naming model: entity name is the "suffix" and the
+        # device name is provided via device_info (since _attr_has_entity_name=True).
+        desc_name = self._description.name
+        if desc_name is UNDEFINED or desc_name is None:
+            self._attr_name = self._description.key.replace("_", " ").title()
         else:
-            device_name = None
-        if not device_name:
-            device_name = self._entry.data.get("name", "Dimplex")
-        
-        # Get entity name from description
-        entity_name = self.entity_description.name or self.entity_description.key.replace("_", " ").title()
-        return f"{device_name} {entity_name}"
+            self._attr_name = cast(str, desc_name)
 
-    @property
-    def native_value(self) -> Any:
-        """Return the state of the sensor."""
-        if self.entity_description.value_fn is None:
-            return None
+        # Initialize dynamic attributes once so they are correct immediately
+        # (and not only after the first coordinator refresh callback).
+        self._sync_from_coordinator()
 
-        if self.coordinator.data is None:
-            return None
+    def _sync_from_coordinator(self) -> None:
+        """Sync dynamic state from coordinator into _attr_* fields."""
+        desc = self._description
+        data = self.coordinator.data
 
-        value = self.entity_description.value_fn(self.coordinator.data)
+        # Default state when unavailable
+        self._attr_native_value = None
+        self._attr_extra_state_attributes = {}
+        self._attr_available = False
+
+        if (
+            not self.coordinator.last_update_success
+            or data is None
+            or not data.get("connected", False)
+            or desc.value_fn is None
+        ):
+            return
+
+        value = desc.value_fn(data)
 
         # For ENUM sensors, ensure value is in options list
         if (
-            self.entity_description.device_class == SensorDeviceClass.ENUM
-            and self.entity_description.options
-            and value not in self.entity_description.options
+            desc.device_class == SensorDeviceClass.ENUM
+            and desc.options
+            and value not in desc.options
         ):
-            # Return None for unknown values to avoid errors
-            return None
+            value = None
 
-        return value
+        self._attr_native_value = value
 
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        if not super().available:
-            return False
-        if self.coordinator.data is None:
-            return False
-        if not self.coordinator.data.get("connected", False):
-            return False
-        if self.entity_description.value_fn is None:
-            return False
-        
-        # For measurement sensors, check if the data key exists and is not None
-        value = self.entity_description.value_fn(self.coordinator.data)
-        
-        # Status/enum sensors are always available if connected
-        if self.entity_description.device_class == SensorDeviceClass.ENUM:
-            return True
-        
-        # Diagnostic codes are always available
-        if self.entity_description.key in ("status_code", "lock_code", "error_code", "sensor_error_code"):
-            return True
-        
-        # For measurement sensors, only available if value exists
-        return value is not None
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        """Return additional state attributes."""
-        attrs: dict[str, Any] = {}
-
-        if self.coordinator.data is None:
-            return attrs
+        # Availability rules (mirrors previous logic)
+        if desc.device_class == SensorDeviceClass.ENUM:
+            self._attr_available = True
+        elif desc.key in (
+            "status_code",
+            "lock_code",
+            "error_code",
+            "sensor_error_code",
+        ):
+            self._attr_available = True
+        else:
+            self._attr_available = value is not None
 
         # Add raw code for enum sensors
-        if self.entity_description.key in ("status", "lock"):
-            code_key = f"{self.entity_description.key}_code"
-            if code_key in self.coordinator.data:
-                attrs["code"] = self.coordinator.data[code_key]
+        if desc.key in ("status", "lock"):
+            code_key = f"{desc.key}_code"
+            if code_key in data:
+                self._attr_extra_state_attributes["code"] = data[code_key]
 
-        return attrs
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self._sync_from_coordinator()
+        super()._handle_coordinator_update()
