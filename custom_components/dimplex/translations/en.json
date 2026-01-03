@@ -152,6 +152,33 @@
       },
       "environmental_energy": {
         "name": "Environmental Energy"
+      },
+      "compressor_1_runtime": {
+        "name": "Compressor 1 Runtime"
+      },
+      "compressor_2_runtime": {
+        "name": "Compressor 2 Runtime"
+      },
+      "primary_pump_fan_runtime": {
+        "name": "Primary Pump / Fan Runtime"
+      },
+      "second_heat_generator_runtime": {
+        "name": "Second Heat Generator Runtime"
+      },
+      "heating_pump_runtime": {
+        "name": "Heating Pump Runtime"
+      },
+      "hot_water_pump_runtime": {
+        "name": "Hot Water Pump Runtime"
+      },
+      "immersion_heater_runtime": {
+        "name": "Immersion Heater Runtime"
+      },
+      "pool_pump_runtime": {
+        "name": "Pool Pump Runtime"
+      },
+      "aux_circ_pump_runtime": {
+        "name": "Auxiliary Circulation Pump Runtime"
       }
     },
     "binary_sensor": {

@@ -409,6 +409,15 @@ class DimplexModbusClient:
             ("cooling_runtime", RuntimeRegisters.COOLING_RUNTIME),
             ("auxiliary_heater_runtime", RuntimeRegisters.AUXILIARY_HEATER_RUNTIME),
             ("defrost_cycles", RuntimeRegisters.DEFROST_CYCLES),
+            ("compressor_1_runtime", RuntimeRegisters.COMPRESSOR_1_RUNTIME),
+            ("compressor_2_runtime", RuntimeRegisters.COMPRESSOR_2_RUNTIME),
+            ("primary_pump_fan_runtime", RuntimeRegisters.PRIMARY_PUMP_FAN_RUNTIME),
+            ("second_heat_generator_runtime", RuntimeRegisters.SECOND_HEAT_GENERATOR_RUNTIME),
+            ("heating_pump_runtime", RuntimeRegisters.HEATING_PUMP_RUNTIME),
+            ("hot_water_pump_runtime", RuntimeRegisters.HOT_WATER_PUMP_RUNTIME),
+            ("immersion_heater_runtime", RuntimeRegisters.IMMERSION_HEATER_RUNTIME),
+            ("pool_pump_runtime", RuntimeRegisters.POOL_PUMP_RUNTIME),
+            ("aux_circ_pump_runtime", RuntimeRegisters.AUX_CIRC_PUMP_RUNTIME),
         ]
         
         for key, register_dict in runtime_registers:

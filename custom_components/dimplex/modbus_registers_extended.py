@@ -350,6 +350,60 @@ class RuntimeRegisters:
         SoftwareVersion.L_M: RegisterDefinition(address=62, scale=1.0, unit="", size=2),
     }
 
+    # Per-component runtimes (WPM software J/L/M): uint16 hours
+    COMPRESSOR_1_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=72, scale=1.0, unit="h", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=72, scale=1.0, unit="h", signed=False),
+    }
+    COMPRESSOR_2_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=73, scale=1.0, unit="h", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=73, scale=1.0, unit="h", signed=False),
+    }
+    PRIMARY_PUMP_FAN_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
+        # Primärpumpe / Ventilator (M11)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=74, scale=1.0, unit="h", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=74, scale=1.0, unit="h", signed=False),
+    }
+    SECOND_HEAT_GENERATOR_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
+        # 2. Wärmeerzeuger (E10)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=75, scale=1.0, unit="h", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=75, scale=1.0, unit="h", signed=False),
+    }
+    HEATING_PUMP_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
+        # Heizungspumpe (M13)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=76, scale=1.0, unit="h", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=76, scale=1.0, unit="h", signed=False),
+    }
+    HOT_WATER_PUMP_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
+        # Warmwasserpumpe (M18)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=77, scale=1.0, unit="h", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=77, scale=1.0, unit="h", signed=False),
+    }
+    IMMERSION_HEATER_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
+        # Flanschheizung (E9)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=78, scale=1.0, unit="h", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=78, scale=1.0, unit="h", signed=False),
+    }
+    POOL_PUMP_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
+        # Schwimmbadpumpe (M19)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=79, scale=1.0, unit="h", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=79, scale=1.0, unit="h", signed=False),
+    }
+    AUX_CIRC_PUMP_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
+        # Zusatzumwälzpumpe (M16) - documented "ab L12"
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=None),
+        SoftwareVersion.L_M: RegisterDefinition(address=71, scale=1.0, unit="h", signed=False),
+    }
+
 
 def decode_digits_12(registers: list[int]) -> int | None:
     """Decode a 12-digit counter split across 3 uint16 registers.
