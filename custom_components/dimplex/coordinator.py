@@ -65,6 +65,13 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name=DOMAIN,
             update_interval=timedelta(seconds=30),
         )
+        _LOGGER.info(
+            "Initialized Dimplex coordinator for %s at %s:%s with %d second update interval",
+            name,
+            host,
+            port,
+            30,
+        )
 
     @property
     def cooling_enabled(self) -> bool:
@@ -125,9 +132,11 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             UpdateFailed: If communication with device fails
 
         """
+        _LOGGER.debug("Starting data update from Dimplex device")
         try:
             # Ensure connection
             if not self.client.is_connected:
+                _LOGGER.info("Reconnecting to Dimplex device at %s:%s", self.host, self.port)
                 connected = await self.client.connect()
                 if not connected:
                     raise UpdateFailed("Failed to connect to Dimplex device")
@@ -143,8 +152,10 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     status_reg, lock_reg, error_reg
                 )
 
-            if not system_status:
-                raise UpdateFailed("No data received from device")
+            # Check if we got at least some data (at least status_code should be present)
+            if not system_status or "status_code" not in system_status:
+                _LOGGER.warning("Incomplete system status data received: %s", system_status)
+                raise UpdateFailed("No valid status data received from device")
 
             # Process status codes into readable strings
             data: dict[str, Any] = {
@@ -172,21 +183,43 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Read operating data (temperatures, pressures, power, energy, runtime)
             # This provides HA-compliant sensor data for InfluxDB/Grafana integration
-            async with asyncio.timeout(30):
-                operating_data = await self.client.read_operating_data(
-                    self.software_version
-                )
-            
-            # Merge operating data into main data dictionary
-            data.update(operating_data)
+            # Continue even if some reads fail - partial data is better than no data
+            try:
+                async with asyncio.timeout(30):
+                    operating_data = await self.client.read_operating_data(
+                        self.software_version
+                    )
+                    # Merge operating data into main data dictionary
+                    if operating_data:
+                        data.update(operating_data)
+                    else:
+                        _LOGGER.warning("No operating data received, but continuing with system status data")
+            except TimeoutError:
+                _LOGGER.warning("Timeout reading operating data, but continuing with system status data")
+                # Continue with system status data only
+            except Exception as err:
+                _LOGGER.warning("Error reading operating data: %s, but continuing with system status data", err)
+                # Continue with system status data only
 
-            _LOGGER.debug("Updated data from Dimplex device: %s", data)
+            _LOGGER.debug(
+                "Successfully updated data from Dimplex device. "
+                "Keys: %s, Data points: %d",
+                list(data.keys()),
+                len(data)
+            )
             return data
 
         except TimeoutError as err:
+            _LOGGER.warning("Timeout communicating with Dimplex device: %s", err)
+            # Mark connection as lost on timeout
+            if self.client.is_connected:
+                await self.client.disconnect()
             raise UpdateFailed("Timeout communicating with device") from err
         except OSError as err:
-            _LOGGER.error("Connection error with Dimplex device: %s", err)
+            _LOGGER.warning("Connection error with Dimplex device: %s", err)
+            # Mark connection as lost on network error
+            if self.client.is_connected:
+                await self.client.disconnect()
             raise UpdateFailed(f"Connection error: {err}") from err
         except Exception as err:
             _LOGGER.exception("Unexpected error updating data from Dimplex device")

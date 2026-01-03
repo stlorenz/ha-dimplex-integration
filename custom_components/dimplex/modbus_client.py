@@ -81,6 +81,15 @@ class DimplexModbusClient:
             True if connection successful, False otherwise
 
         """
+        # Disconnect existing connection if any
+        if self._client is not None:
+            try:
+                self._client.close()
+            except Exception:
+                pass
+            self._client = None
+            self._connected = False
+
         try:
             self._client = AsyncModbusTcpClient(
                 host=self.host,
@@ -99,10 +108,22 @@ class DimplexModbusClient:
         except OSError as err:
             _LOGGER.error("Network error connecting to Dimplex device: %s", err)
             self._connected = False
+            if self._client is not None:
+                try:
+                    self._client.close()
+                except Exception:
+                    pass
+                self._client = None
             return False
         except ModbusException as err:
             _LOGGER.error("Modbus error connecting to device: %s", err)
             self._connected = False
+            if self._client is not None:
+                try:
+                    self._client.close()
+                except Exception:
+                    pass
+                self._client = None
             return False
 
     async def disconnect(self) -> None:
