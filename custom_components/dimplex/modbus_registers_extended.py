@@ -137,58 +137,109 @@ class OperatingDataRegisters:
 
     # Temperature Sensors (in 0.1°C units, signed)
     FLOW_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=10, scale=0.1, unit="°C"),
-        SoftwareVersion.J: RegisterDefinition(address=10, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=10, scale=0.1, unit="°C"),
+        # Temperatur Vorlauf (R9)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=5, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=5, scale=0.1, unit="°C"),
     }
 
     RETURN_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=11, scale=0.1, unit="°C"),
+        # Temperatur Ruecklauf (R2)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=2, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=2, scale=0.1, unit="°C"),
+    }
+
+    OUTSIDE_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
+        # Außentemperatur (R1)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=1, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=1, scale=0.1, unit="°C"),
+    }
+
+    HOT_WATER_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
+        # Temperatur Warmwasser (R3)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=3, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=3, scale=0.1, unit="°C"),
+    }
+
+    HEAT_SOURCE_INLET_TEMP: dict[SoftwareVersion, RegisterDefinition] = {
+        # Temperatur Wärmequelleneintritt (R24)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=6, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=6, scale=0.1, unit="°C"),
+    }
+
+    HEAT_SOURCE_OUTLET_TEMP: dict[SoftwareVersion, RegisterDefinition] = {
+        # Temperatur Wärmequellenaustritt (R6)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=7, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=7, scale=0.1, unit="°C"),
+    }
+
+    ROOM_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
+        # Raumtemperatur 1 / RT-RTH Econ
+        SoftwareVersion.H: RegisterDefinition(address=None),
         SoftwareVersion.J: RegisterDefinition(address=11, scale=0.1, unit="°C"),
         SoftwareVersion.L_M: RegisterDefinition(address=11, scale=0.1, unit="°C"),
     }
 
-    OUTSIDE_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=12, scale=0.1, unit="°C"),
-        SoftwareVersion.J: RegisterDefinition(address=12, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=12, scale=0.1, unit="°C"),
-    }
-
-    HOT_WATER_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=13, scale=0.1, unit="°C"),
-        SoftwareVersion.J: RegisterDefinition(address=13, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=13, scale=0.1, unit="°C"),
-    }
-
-    HEAT_SOURCE_INLET_TEMP: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=14, scale=0.1, unit="°C"),
-        SoftwareVersion.J: RegisterDefinition(address=14, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=14, scale=0.1, unit="°C"),
-    }
-
-    HEAT_SOURCE_OUTLET_TEMP: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=15, scale=0.1, unit="°C"),
-        SoftwareVersion.J: RegisterDefinition(address=15, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=15, scale=0.1, unit="°C"),
-    }
-
-    ROOM_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=16, scale=0.1, unit="°C"),
-        SoftwareVersion.J: RegisterDefinition(address=16, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=16, scale=0.1, unit="°C"),
-    }
-
     # Setpoints (in 0.1°C units)
     FLOW_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=17, scale=0.1, unit="°C"),
-        SoftwareVersion.J: RegisterDefinition(address=17, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=17, scale=0.1, unit="°C"),
+        # Flow setpoint is not in the snippet; keep unknown until documented.
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=None),
+        SoftwareVersion.L_M: RegisterDefinition(address=None),
     }
 
     HOT_WATER_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=18, scale=0.1, unit="°C"),
-        SoftwareVersion.J: RegisterDefinition(address=18, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=18, scale=0.1, unit="°C"),
+        # Temperatur Warmwassersoll
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=58, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=58, scale=0.1, unit="°C"),
+    }
+
+    RETURN_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
+        # Temperatur Rücklaufsoll
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=53, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=53, scale=0.1, unit="°C"),
+    }
+
+    HC2_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
+        # Solltemperatur 2.Heizkreis
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=54, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=54, scale=0.1, unit="°C"),
+    }
+
+    HC3_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
+        # Solltemperatur 3.Heizkreis
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=55, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=55, scale=0.1, unit="°C"),
+    }
+
+    HC2_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
+        # Temperatur 2.Heizkreis (R5)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=9, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=9, scale=0.1, unit="°C"),
+    }
+
+    HC3_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
+        # Temperatur 3.Heizkreis (R13)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=10, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=10, scale=0.1, unit="°C"),
+    }
+
+    ROOM_TEMPERATURE_2: dict[SoftwareVersion, RegisterDefinition] = {
+        # Raumtemperatur 2
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=12, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=12, scale=0.1, unit="°C"),
     }
 
     # Additional temperature sensors for refrigerant circuit (diagnostic)
@@ -219,16 +270,18 @@ class OperatingDataRegisters:
     # Pressure sensors (in 0.01 bar units)
     # High Pressure (condensation pressure)
     HIGH_PRESSURE: dict[SoftwareVersion, RegisterDefinition] = {
+        # Empirically verified on WPM Touch (J/L/M): reg 8 reports ~22.6 bar as 226 -> 0.1 bar steps.
         SoftwareVersion.H: RegisterDefinition(address=30, scale=0.01, unit="bar", signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=30, scale=0.01, unit="bar", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=30, scale=0.01, unit="bar", signed=False),
+        SoftwareVersion.J: RegisterDefinition(address=8, scale=0.1, unit="bar", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=8, scale=0.1, unit="bar", signed=False),
     }
 
     # Low Pressure (evaporation pressure)
     LOW_PRESSURE: dict[SoftwareVersion, RegisterDefinition] = {
+        # Candidate on WPM Touch (J/L/M): reg 101 shows value 55 when UI shows 5.5 bar -> 0.1 bar steps.
         SoftwareVersion.H: RegisterDefinition(address=31, scale=0.01, unit="bar", signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=31, scale=0.01, unit="bar", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=31, scale=0.01, unit="bar", signed=False),
+        SoftwareVersion.J: RegisterDefinition(address=101, scale=0.1, unit="bar", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=101, scale=0.1, unit="bar", signed=False),
     }
 
     # Brine circuit pressure (for ground source heat pumps)

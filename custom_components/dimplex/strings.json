@@ -56,6 +56,51 @@
       "error_code": {
         "name": "Error Code"
       },
+      "room_temperature": {
+        "name": "Room Temperature"
+      },
+      "room_temperature_2": {
+        "name": "Room Temperature 2"
+      },
+      "flow_temperature": {
+        "name": "Flow Temperature"
+      },
+      "return_temperature": {
+        "name": "Return Temperature"
+      },
+      "outside_temperature": {
+        "name": "Outside Temperature"
+      },
+      "hot_water_temperature": {
+        "name": "Hot Water Temperature"
+      },
+      "heat_source_inlet_temperature": {
+        "name": "Heat Source Inlet Temperature"
+      },
+      "heat_source_outlet_temperature": {
+        "name": "Heat Source Outlet Temperature"
+      },
+      "flow_setpoint": {
+        "name": "Flow Setpoint"
+      },
+      "return_setpoint": {
+        "name": "Return Setpoint"
+      },
+      "hot_water_setpoint": {
+        "name": "Hot Water Setpoint"
+      },
+      "hc2_setpoint": {
+        "name": "HC2 Setpoint"
+      },
+      "hc2_temperature": {
+        "name": "HC2 Temperature"
+      },
+      "hc3_setpoint": {
+        "name": "HC3 Setpoint"
+      },
+      "hc3_temperature": {
+        "name": "HC3 Temperature"
+      },
       "pv_surplus": {
         "name": "PV Surplus"
       },

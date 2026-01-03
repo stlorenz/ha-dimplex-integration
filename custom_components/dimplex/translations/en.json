@@ -126,6 +126,24 @@
       "sensor_error_code": {
         "name": "Sensor Error Code"
       },
+      "room_temperature_2": {
+        "name": "Room Temperature 2"
+      },
+      "return_setpoint": {
+        "name": "Return Setpoint"
+      },
+      "hc2_setpoint": {
+        "name": "HC2 Setpoint"
+      },
+      "hc2_temperature": {
+        "name": "HC2 Temperature"
+      },
+      "hc3_setpoint": {
+        "name": "HC3 Setpoint"
+      },
+      "hc3_temperature": {
+        "name": "HC3 Temperature"
+      },
       "pv_surplus": {
         "name": "PV Surplus"
       },
