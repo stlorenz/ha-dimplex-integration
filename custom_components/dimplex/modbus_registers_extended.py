@@ -139,8 +139,8 @@ class OperatingDataRegisters:
     FLOW_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
         # Temperatur Vorlauf (R9)
         SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=5, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=5, scale=0.1, unit="°C"),
+        SoftwareVersion.J: RegisterDefinition(address=9, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=9, scale=0.1, unit="°C"),
     }
 
     RETURN_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
@@ -224,8 +224,8 @@ class OperatingDataRegisters:
     HC2_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
         # Temperatur 2.Heizkreis (R5)
         SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=9, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=9, scale=0.1, unit="°C"),
+        SoftwareVersion.J: RegisterDefinition(address=5, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=5, scale=0.1, unit="°C"),
     }
 
     HC3_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
