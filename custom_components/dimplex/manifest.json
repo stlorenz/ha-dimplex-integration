@@ -9,6 +9,7 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/stlorenz/ha-dimplex-integration/issues",
   "requirements": ["pymodbus>=3.8.0"],
-  "version": "0.1.7"
+  "version": "0.1.8",
+  "description": "Dimplex Heatpump integration, currently in development. Only tested with LA1422C heatpump."
 }
 

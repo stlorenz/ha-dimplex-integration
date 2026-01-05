@@ -348,9 +348,7 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
         return reg_def.address if reg_def else None
 
     def _get_mode_register(self) -> int | None:
-        """Get the operating mode register address for the current software version.
-
-        Returns:
+        """Get the operating mode register address for the current software version.        Returns:
             Register address if configured, None if not available.
         """
         return OperatingModeRegisters.CURRENT_MODE.get(

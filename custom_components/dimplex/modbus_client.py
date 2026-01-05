@@ -23,6 +23,16 @@ _LOGGER = logging.getLogger(__name__)
 # Default Modbus TCP port
 DEFAULT_PORT = 502
 
+# COP smoothing parameters
+# Minimum power thresholds (W) to avoid calculating COP during unstable transitions
+MIN_POWER_IN_FOR_COP = 2000  # Minimum 2kW input power
+MIN_POWER_OUT_FOR_COP = 3000  # Minimum 3kW output power
+# Maximum realistic COP value (filters out unrealistic spikes)
+MAX_REALISTIC_COP = 8.0
+# Exponential moving average alpha (0.0-1.0, lower = more smoothing)
+# 0.3 means new value has 30% weight, previous smoothed value has 70% weight
+COP_SMOOTHING_ALPHA = 0.3
+
 
 class DimplexModbusClient:
     """Dimplex Modbus TCP client wrapper."""
@@ -42,6 +52,8 @@ class DimplexModbusClient:
         # pymodbus renamed the slave/unit parameter over time.
         # Cache which kw name works for this runtime ("device_id", "unit", "slave").
         self._unit_id_kw: str | None = None
+        # COP smoothing state
+        self._smoothed_cop: float | None = None
 
     async def _call_with_unit_id(
         self,
@@ -89,6 +101,8 @@ class DimplexModbusClient:
                 pass
             self._client = None
             self._connected = False
+            # Reset COP smoothing state on disconnect
+            self._smoothed_cop = None
 
         try:
             self._client = AsyncModbusTcpClient(
@@ -131,6 +145,8 @@ class DimplexModbusClient:
         if self._client:
             self._client.close()
             self._connected = False
+            # Reset COP smoothing state on disconnect
+            self._smoothed_cop = None
             _LOGGER.info("Disconnected from Dimplex device")
 
     @property
@@ -452,8 +468,39 @@ class DimplexModbusClient:
         if "current_power_consumption" in data and "current_heating_power" in data:
             power_in = data["current_power_consumption"]
             power_out = data["current_heating_power"]
-            if power_in > 0:
-                data["cop"] = round(power_out / power_in, 2)
+            
+            # Only calculate COP when both power values are above minimum thresholds
+            # This avoids unrealistic spikes during mode transitions (e.g., when pump switches)
+            if power_in >= MIN_POWER_IN_FOR_COP and power_out >= MIN_POWER_OUT_FOR_COP:
+                raw_cop = power_out / power_in
+                
+                # Cap unrealistic values (e.g., from measurement artifacts during transitions)
+                if raw_cop > MAX_REALISTIC_COP:
+                    _LOGGER.debug(
+                        "Capping unrealistic COP value %.2f (power_in=%.0fW, power_out=%.0fW)",
+                        raw_cop, power_in, power_out
+                    )
+                    raw_cop = MAX_REALISTIC_COP
+                
+                # Apply exponential moving average smoothing
+                if self._smoothed_cop is not None:
+                    # EMA: new_value = alpha * raw_value + (1 - alpha) * previous_smoothed_value
+                    smoothed_cop = COP_SMOOTHING_ALPHA * raw_cop + (1 - COP_SMOOTHING_ALPHA) * self._smoothed_cop
+                else:
+                    # First value: use raw COP as starting point
+                    smoothed_cop = raw_cop
+                
+                # Update stored smoothed value
+                self._smoothed_cop = smoothed_cop
+                
+                # Round to 2 decimal places for display
+                data["cop"] = round(smoothed_cop, 2)
+            elif power_in > 0:
+                # Power values below threshold - don't calculate new COP
+                # but keep previous smoothed value if available
+                if self._smoothed_cop is not None:
+                    data["cop"] = round(self._smoothed_cop, 2)
+                # If no previous value, don't set COP (will be None/unavailable)
         
         _LOGGER.debug("Read operating data: %s", data)
         return data
