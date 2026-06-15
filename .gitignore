@@ -39,3 +39,9 @@ Thumbs.db
 # Home Assistant
 .homeassistant/
 
+# Test / coverage artifacts
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+

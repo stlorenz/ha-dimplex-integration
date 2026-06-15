@@ -21,8 +21,7 @@ Energy values may span 2 registers (32-bit).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum, IntEnum
-from typing import Final
+from enum import IntEnum
 from collections.abc import Callable
 
 from .modbus_registers import SoftwareVersion
@@ -49,19 +48,6 @@ class RegisterDefinition:
 
     decoder: Callable[[list[int]], int | float | None] | None = None
     """Optional decoder for multi-register values (overrides default decoding)."""
-
-
-class RegisterType(Enum):
-    """Types of register data."""
-    
-    TEMPERATURE = "temperature"
-    PRESSURE = "pressure"
-    POWER = "power"
-    ENERGY = "energy"
-    RUNTIME = "runtime"
-    COUNTER = "counter"
-    PERCENTAGE = "percentage"
-    BOOLEAN = "boolean"
 
 
 class OperatingMode(IntEnum):
@@ -120,9 +106,11 @@ class OperatingModeRegisters:
     }
 
     BOOST_VENTILATION_TIME = {
+        # UNVERIFIED: address 127 is suspicious; all other Lüftung registers sit
+        # in the 5000-range. Likely a transcription error from the docs.
         SoftwareVersion.H: None,
-        SoftwareVersion.J: 127,  # Zeitwert Stoßlüften (15..90)
-        SoftwareVersion.L_M: 127,  # Zeitwert Stoßlüften (15..90)
+        SoftwareVersion.J: 127,  # Zeitwert Stoßlüften (15..90) — UNVERIFIED
+        SoftwareVersion.L_M: 127,  # Zeitwert Stoßlüften (15..90) — UNVERIFIED
     }
 
 
@@ -243,35 +231,37 @@ class OperatingDataRegisters:
     }
 
     # Additional temperature sensors for refrigerant circuit (diagnostic)
+    # UNVERIFIED: addresses 20-23 assumed identical across H/J/L_M. No empirical
+    # confirmation; readings may be unreliable until checked against the WPM UI.
     EVAPORATOR_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=20, scale=0.1, unit="°C"),
-        SoftwareVersion.J: RegisterDefinition(address=20, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=20, scale=0.1, unit="°C"),
+        SoftwareVersion.H: RegisterDefinition(address=20, scale=0.1, unit="°C"),  # UNVERIFIED
+        SoftwareVersion.J: RegisterDefinition(address=20, scale=0.1, unit="°C"),  # UNVERIFIED
+        SoftwareVersion.L_M: RegisterDefinition(address=20, scale=0.1, unit="°C"),  # UNVERIFIED
     }
 
     CONDENSER_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=21, scale=0.1, unit="°C"),
-        SoftwareVersion.J: RegisterDefinition(address=21, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=21, scale=0.1, unit="°C"),
+        SoftwareVersion.H: RegisterDefinition(address=21, scale=0.1, unit="°C"),  # UNVERIFIED
+        SoftwareVersion.J: RegisterDefinition(address=21, scale=0.1, unit="°C"),  # UNVERIFIED
+        SoftwareVersion.L_M: RegisterDefinition(address=21, scale=0.1, unit="°C"),  # UNVERIFIED
     }
 
     SUCTION_GAS_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=22, scale=0.1, unit="°C"),
-        SoftwareVersion.J: RegisterDefinition(address=22, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=22, scale=0.1, unit="°C"),
+        SoftwareVersion.H: RegisterDefinition(address=22, scale=0.1, unit="°C"),  # UNVERIFIED
+        SoftwareVersion.J: RegisterDefinition(address=22, scale=0.1, unit="°C"),  # UNVERIFIED
+        SoftwareVersion.L_M: RegisterDefinition(address=22, scale=0.1, unit="°C"),  # UNVERIFIED
     }
 
     DISCHARGE_GAS_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=23, scale=0.1, unit="°C"),
-        SoftwareVersion.J: RegisterDefinition(address=23, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=23, scale=0.1, unit="°C"),
+        SoftwareVersion.H: RegisterDefinition(address=23, scale=0.1, unit="°C"),  # UNVERIFIED
+        SoftwareVersion.J: RegisterDefinition(address=23, scale=0.1, unit="°C"),  # UNVERIFIED
+        SoftwareVersion.L_M: RegisterDefinition(address=23, scale=0.1, unit="°C"),  # UNVERIFIED
     }
 
-    # Pressure sensors (in 0.01 bar units)
+    # Pressure sensors
     # High Pressure (condensation pressure)
     HIGH_PRESSURE: dict[SoftwareVersion, RegisterDefinition] = {
         # Empirically verified on WPM Touch (J/L/M): reg 8 reports ~22.6 bar as 226 -> 0.1 bar steps.
-        SoftwareVersion.H: RegisterDefinition(address=30, scale=0.01, unit="bar", signed=False),
+        SoftwareVersion.H: RegisterDefinition(address=30, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
         SoftwareVersion.J: RegisterDefinition(address=8, scale=0.1, unit="bar", signed=False),
         SoftwareVersion.L_M: RegisterDefinition(address=8, scale=0.1, unit="bar", signed=False),
     }
@@ -279,23 +269,27 @@ class OperatingDataRegisters:
     # Low Pressure (evaporation pressure)
     LOW_PRESSURE: dict[SoftwareVersion, RegisterDefinition] = {
         # Candidate on WPM Touch (J/L/M): reg 101 shows value 55 when UI shows 5.5 bar -> 0.1 bar steps.
-        SoftwareVersion.H: RegisterDefinition(address=31, scale=0.01, unit="bar", signed=False),
+        SoftwareVersion.H: RegisterDefinition(address=31, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
         SoftwareVersion.J: RegisterDefinition(address=101, scale=0.1, unit="bar", signed=False),
         SoftwareVersion.L_M: RegisterDefinition(address=101, scale=0.1, unit="bar", signed=False),
     }
 
     # Brine circuit pressure (for ground source heat pumps)
+    # UNVERIFIED: address 32 & 0.01 scale are placeholder guesses, never confirmed
+    # against a brine system. High/Low pressure scaling on J/L_M turned out to be 0.1,
+    # so 0.01 here is also suspicious.
     BRINE_PRESSURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=32, scale=0.01, unit="bar", signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=32, scale=0.01, unit="bar", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=32, scale=0.01, unit="bar", signed=False),
+        SoftwareVersion.H: RegisterDefinition(address=32, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
+        SoftwareVersion.J: RegisterDefinition(address=32, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
+        SoftwareVersion.L_M: RegisterDefinition(address=32, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
     }
 
     # Heating water system pressure
+    # UNVERIFIED: address 33 & 0.01 scale are placeholder guesses.
     WATER_PRESSURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=33, scale=0.01, unit="bar", signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=33, scale=0.01, unit="bar", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=33, scale=0.01, unit="bar", signed=False),
+        SoftwareVersion.H: RegisterDefinition(address=33, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
+        SoftwareVersion.J: RegisterDefinition(address=33, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
+        SoftwareVersion.L_M: RegisterDefinition(address=33, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
     }
 
 
@@ -308,46 +302,49 @@ class RuntimeRegisters:
     Large values may use 2 registers (32-bit).
     """
 
+    # Runtime / counter values are unsigned (default signed=True would flip
+    # the sign once the count exceeds 2^31, which happens for long-running
+    # installs).
     COMPRESSOR_RUNTIME_TOTAL: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=50, scale=1.0, unit="h", size=2),
-        SoftwareVersion.J: RegisterDefinition(address=50, scale=1.0, unit="h", size=2),
-        SoftwareVersion.L_M: RegisterDefinition(address=50, scale=1.0, unit="h", size=2),
+        SoftwareVersion.H: RegisterDefinition(address=50, scale=1.0, unit="h", size=2, signed=False),
+        SoftwareVersion.J: RegisterDefinition(address=50, scale=1.0, unit="h", size=2, signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=50, scale=1.0, unit="h", size=2, signed=False),
     }
 
     COMPRESSOR_STARTS: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=52, scale=1.0, unit="", size=2),
-        SoftwareVersion.J: RegisterDefinition(address=52, scale=1.0, unit="", size=2),
-        SoftwareVersion.L_M: RegisterDefinition(address=52, scale=1.0, unit="", size=2),
+        SoftwareVersion.H: RegisterDefinition(address=52, scale=1.0, unit="", size=2, signed=False),
+        SoftwareVersion.J: RegisterDefinition(address=52, scale=1.0, unit="", size=2, signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=52, scale=1.0, unit="", size=2, signed=False),
     }
 
     HEATING_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=54, scale=1.0, unit="h", size=2),
-        SoftwareVersion.J: RegisterDefinition(address=54, scale=1.0, unit="h", size=2),
-        SoftwareVersion.L_M: RegisterDefinition(address=54, scale=1.0, unit="h", size=2),
+        SoftwareVersion.H: RegisterDefinition(address=54, scale=1.0, unit="h", size=2, signed=False),
+        SoftwareVersion.J: RegisterDefinition(address=54, scale=1.0, unit="h", size=2, signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=54, scale=1.0, unit="h", size=2, signed=False),
     }
 
     HOT_WATER_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=56, scale=1.0, unit="h", size=2),
-        SoftwareVersion.J: RegisterDefinition(address=56, scale=1.0, unit="h", size=2),
-        SoftwareVersion.L_M: RegisterDefinition(address=56, scale=1.0, unit="h", size=2),
+        SoftwareVersion.H: RegisterDefinition(address=56, scale=1.0, unit="h", size=2, signed=False),
+        SoftwareVersion.J: RegisterDefinition(address=56, scale=1.0, unit="h", size=2, signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=56, scale=1.0, unit="h", size=2, signed=False),
     }
 
     COOLING_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=58, scale=1.0, unit="h", size=2),
-        SoftwareVersion.J: RegisterDefinition(address=58, scale=1.0, unit="h", size=2),
-        SoftwareVersion.L_M: RegisterDefinition(address=58, scale=1.0, unit="h", size=2),
+        SoftwareVersion.H: RegisterDefinition(address=58, scale=1.0, unit="h", size=2, signed=False),
+        SoftwareVersion.J: RegisterDefinition(address=58, scale=1.0, unit="h", size=2, signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=58, scale=1.0, unit="h", size=2, signed=False),
     }
 
     AUXILIARY_HEATER_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=60, scale=1.0, unit="h", size=2),
-        SoftwareVersion.J: RegisterDefinition(address=60, scale=1.0, unit="h", size=2),
-        SoftwareVersion.L_M: RegisterDefinition(address=60, scale=1.0, unit="h", size=2),
+        SoftwareVersion.H: RegisterDefinition(address=60, scale=1.0, unit="h", size=2, signed=False),
+        SoftwareVersion.J: RegisterDefinition(address=60, scale=1.0, unit="h", size=2, signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=60, scale=1.0, unit="h", size=2, signed=False),
     }
 
     DEFROST_CYCLES: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=62, scale=1.0, unit="", size=2),
-        SoftwareVersion.J: RegisterDefinition(address=62, scale=1.0, unit="", size=2),
-        SoftwareVersion.L_M: RegisterDefinition(address=62, scale=1.0, unit="", size=2),
+        SoftwareVersion.H: RegisterDefinition(address=62, scale=1.0, unit="", size=2, signed=False),
+        SoftwareVersion.J: RegisterDefinition(address=62, scale=1.0, unit="", size=2, signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=62, scale=1.0, unit="", size=2, signed=False),
     }
 
     # Per-component runtimes (WPM software J/L/M): uint16 hours
@@ -632,31 +629,6 @@ class SettingsRegisters:
     }
 
 
-# Data scaling factors and units (legacy - kept for backward compatibility)
-REGISTER_SCALING: Final[dict[str, dict]] = {
-    "temperature": {
-        "factor": 0.1,  # Most temps are in 0.1°C units
-        "unit": "°C",
-    },
-    "pressure": {
-        "factor": 0.01,  # Pressures typically in 0.01 bar units
-        "unit": "bar",
-    },
-    "power": {
-        "factor": 1.0,  # Power typically in W
-        "unit": "W",
-    },
-    "energy": {
-        "factor": 0.1,  # Energy typically in 0.1 kWh units
-        "unit": "kWh",
-    },
-    "runtime": {
-        "factor": 1.0,  # Runtime typically in hours
-        "unit": "h",
-    },
-}
-
-
 def get_register_definition(
     register_dict: dict[SoftwareVersion, RegisterDefinition],
     software_version: SoftwareVersion,
@@ -678,42 +650,24 @@ def get_register_definition(
 
 def scale_value(raw_value: int, register_def: RegisterDefinition) -> float:
     """Scale raw register value using the register definition.
-    
+
+    Two's-complement decoding is applied when ``signed=True``, sized by the
+    register's width (16 bit for size=1, 32 bit for size=2).
+
     Args:
         raw_value: Raw integer value from register
         register_def: Register definition with scale factor
-        
+
     Returns:
         Scaled float value
     """
-    # Handle signed values for temperatures (they can be negative)
-    if register_def.signed and raw_value > 32767:
-        raw_value = raw_value - 65536
-    
+    if register_def.signed:
+        bits = register_def.size * 16
+        sign_bit = 1 << (bits - 1)
+        if raw_value >= sign_bit:
+            raw_value -= 1 << bits
+
     return raw_value * register_def.scale
-
-
-def scale_temperature(raw_value: int) -> float:
-    """Scale raw temperature value to °C."""
-    # Handle signed values (temperatures can be negative)
-    if raw_value > 32767:
-        raw_value = raw_value - 65536
-    return raw_value * REGISTER_SCALING["temperature"]["factor"]
-
-
-def scale_pressure(raw_value: int) -> float:
-    """Scale raw pressure value to bar."""
-    return raw_value * REGISTER_SCALING["pressure"]["factor"]
-
-
-def scale_power(raw_value: int) -> float:
-    """Scale raw power value to W."""
-    return raw_value * REGISTER_SCALING["power"]["factor"]
-
-
-def scale_energy(raw_value: int) -> float:
-    """Scale raw energy value to kWh."""
-    return raw_value * REGISTER_SCALING["energy"]["factor"]
 
 
 def read_32bit_value(registers: list[int]) -> int:
@@ -729,51 +683,3 @@ def read_32bit_value(registers: list[int]) -> int:
     if len(registers) < 2:
         return 0
     return (registers[0] << 16) | registers[1]
-
-
-# All temperature registers for batch reading
-TEMPERATURE_REGISTERS: Final[list[str]] = [
-    "FLOW_TEMPERATURE",
-    "RETURN_TEMPERATURE",
-    "OUTSIDE_TEMPERATURE",
-    "HOT_WATER_TEMPERATURE",
-    "HEAT_SOURCE_INLET_TEMP",
-    "HEAT_SOURCE_OUTLET_TEMP",
-    "ROOM_TEMPERATURE",
-    "FLOW_SETPOINT",
-    "HOT_WATER_SETPOINT",
-    "EVAPORATOR_TEMPERATURE",
-    "CONDENSER_TEMPERATURE",
-    "SUCTION_GAS_TEMPERATURE",
-    "DISCHARGE_GAS_TEMPERATURE",
-]
-
-# All pressure registers for batch reading
-PRESSURE_REGISTERS: Final[list[str]] = [
-    "HIGH_PRESSURE",
-    "LOW_PRESSURE",
-    "BRINE_PRESSURE",
-    "WATER_PRESSURE",
-]
-
-# All energy registers for batch reading
-ENERGY_REGISTERS: Final[list[str]] = [
-    "CURRENT_POWER_CONSUMPTION",
-    "CURRENT_HEATING_POWER",
-    "TOTAL_ENERGY_CONSUMED",
-    "TOTAL_HEAT_GENERATED",
-    "HEATING_ENERGY",
-    "HOT_WATER_ENERGY",
-    "COOLING_ENERGY",
-]
-
-# All runtime registers for batch reading
-RUNTIME_REGISTERS: Final[list[str]] = [
-    "COMPRESSOR_RUNTIME_TOTAL",
-    "COMPRESSOR_STARTS",
-    "HEATING_RUNTIME",
-    "HOT_WATER_RUNTIME",
-    "COOLING_RUNTIME",
-    "AUXILIARY_HEATER_RUNTIME",
-    "DEFROST_CYCLES",
-]

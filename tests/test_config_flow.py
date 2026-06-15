@@ -19,9 +19,15 @@ from custom_components.dimplex.const import (
     CONF_MODEL,
     CONF_NAME,
     CONF_PORT,
+    CONF_SLAVE_ID,
+    CONF_SOFTWARE_VERSION,
     DOMAIN,
+    OPT_COOLING_ENABLED,
+    OPT_DHW_ENABLED,
+    OPT_HEAT_SOURCE,
     HeatPumpModel,
 )
+from custom_components.dimplex.modbus_registers import SoftwareVersion
 
 
 @pytest.mark.asyncio
@@ -219,3 +225,96 @@ async def test_config_flow_duplicate_aborts(hass: HomeAssistant):
                     CONF_MODEL: HeatPumpModel.LA1422C,
                 }
             )
+
+
+@pytest.mark.asyncio
+async def test_config_flow_persists_software_version_and_slave(
+    hass: HomeAssistant,
+):
+    """User-step submission carries software_version and slave_id into entry data."""
+    flow = ConfigFlow()
+    flow.hass = hass
+    flow.context = {}
+
+    with patch(
+        "custom_components.dimplex.config_flow.validate_input",
+        new=AsyncMock(return_value={"title": "Test Dimplex"}),
+    ):
+        result = await flow.async_step_user(
+            user_input={
+                CONF_HOST: "192.168.1.50",
+                CONF_PORT: 502,
+                CONF_NAME: "Test Dimplex",
+                CONF_MODEL: HeatPumpModel.SI_SERIES,
+                CONF_SOFTWARE_VERSION: int(SoftwareVersion.J),
+                CONF_SLAVE_ID: 5,
+            }
+        )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_SOFTWARE_VERSION] == int(SoftwareVersion.J)
+    assert result["data"][CONF_SLAVE_ID] == 5
+    assert result["data"][CONF_MODEL] == HeatPumpModel.SI_SERIES
+
+
+@pytest.mark.asyncio
+async def test_options_flow_two_steps_persists_overrides(
+    hass: HomeAssistant, enable_custom_integrations  # noqa: F811
+):
+    """End-to-end options flow: init (model + sw version) -> features -> save.
+
+    Goes through hass.config_entries.options so the OptionsFlow.config_entry
+    context resolves correctly (verifies the HA 2025.12 deprecation fix).
+    """
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="opts-test",
+        data={
+            CONF_HOST: "10.0.0.5",
+            CONF_PORT: 502,
+            CONF_NAME: "Optstest",
+            CONF_MODEL: HeatPumpModel.LA1422C,
+            CONF_SOFTWARE_VERSION: int(SoftwareVersion.L_M),
+            CONF_SLAVE_ID: 1,
+        },
+        options={},
+    )
+    entry.add_to_hass(hass)
+
+    # Don't actually set up the platforms; we only care about the options flow.
+    with patch(
+        "custom_components.dimplex.async_setup_entry",
+        new=AsyncMock(return_value=True),
+    ):
+        # Step 1: open the options flow (renders init form)
+        init_result = await hass.config_entries.options.async_init(entry.entry_id)
+        assert init_result["type"] == FlowResultType.FORM
+        assert init_result["step_id"] == "init"
+
+        # Step 2: submit model + software version -> features form
+        features_result = await hass.config_entries.options.async_configure(
+            init_result["flow_id"],
+            user_input={
+                CONF_MODEL: HeatPumpModel.SI_SERIES,
+                CONF_SOFTWARE_VERSION: int(SoftwareVersion.J),
+            },
+        )
+        assert features_result["type"] == FlowResultType.FORM
+        assert features_result["step_id"] == "features"
+
+        # Step 3: submit feature overrides -> create entry
+        done = await hass.config_entries.options.async_configure(
+            features_result["flow_id"],
+            user_input={
+                OPT_COOLING_ENABLED: True,
+                OPT_DHW_ENABLED: True,
+                OPT_HEAT_SOURCE: "brine",
+            },
+        )
+        assert done["type"] == FlowResultType.CREATE_ENTRY
+
+    # Verify the persisted options include the model + sw override.
+    assert entry.options[CONF_MODEL] == HeatPumpModel.SI_SERIES
+    assert entry.options[CONF_SOFTWARE_VERSION] == int(SoftwareVersion.J)
+    assert entry.options[OPT_COOLING_ENABLED] is True
+    assert entry.options[OPT_HEAT_SOURCE] == "brine"

@@ -13,6 +13,7 @@ from .const import DOMAIN, MODEL_NAMES, HeatPumpModel
 from .modbus_client import DimplexModbusClient
 from .modbus_registers import (
     SoftwareVersion,
+    get_error_message,
     get_error_register,
     get_lock_message,
     get_lock_register,
@@ -36,6 +37,7 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         name: str = "Dimplex",
         model: str = HeatPumpModel.GENERIC,
         capabilities: dict[str, Any] | None = None,
+        slave_id: int = 1,
     ) -> None:
         """Initialize.
 
@@ -47,6 +49,7 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name: Device name
             model: Heat pump model identifier
             capabilities: Dictionary of device capabilities and enabled features
+            slave_id: Modbus unit/slave ID (defaults to 1)
 
         """
         self.host = host
@@ -56,7 +59,8 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.model = model
         self.model_name = MODEL_NAMES.get(model, model)
         self.capabilities = capabilities or {}
-        self.client = DimplexModbusClient(host, port)
+        self.slave_id = slave_id
+        self.client = DimplexModbusClient(host, port, slave_id=slave_id)
         self._write_enabled = False  # Default: read-only mode
 
         super().__init__(
@@ -167,6 +171,9 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 ),
                 "lock": get_lock_message(
                     system_status.get("lock_code", 0), self.software_version
+                ),
+                "error": get_error_message(
+                    system_status.get("error_code", 0), self.software_version
                 ),
                 "connected": True,
                 "name": self.device_name,

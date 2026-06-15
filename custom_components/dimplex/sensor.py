@@ -32,6 +32,7 @@ from .coordinator import DimplexDataUpdateCoordinator
 from .modbus_registers import SoftwareVersion
 from .modbus_registers_extended import EnergyRegisters, RuntimeRegisters, get_register_definition
 from .modbus_registers import (
+    ERROR_MESSAGES,
     LOCK_MESSAGES_LM,
     STATUS_MESSAGES_LM,
     STATUS_MESSAGES_HJ,
@@ -77,6 +78,11 @@ def _get_all_lock_options() -> list[str]:
     options.update(LOCK_MESSAGES_J.values())
     options.update(LOCK_MESSAGES_H.values())
     return sorted(options)
+
+
+def _get_all_error_options() -> list[str]:
+    """Get all error identifiers (currently shared across software versions)."""
+    return sorted(ERROR_MESSAGES.values())
 
 
 @dataclass(frozen=True)
@@ -132,6 +138,15 @@ STATUS_SENSOR_TYPES: tuple[DimplexSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data.get("error_code", 0),
+    ),
+    DimplexSensorEntityDescription(
+        key="error",
+        translation_key="error",
+        name="Error",
+        icon="mdi:alert-circle",
+        device_class=SensorDeviceClass.ENUM,
+        options=_get_all_error_options(),
+        value_fn=lambda data: data.get("error", "none"),
     ),
     DimplexSensorEntityDescription(
         key="sensor_error_code",
@@ -880,7 +895,7 @@ class DimplexSensor(CoordinatorEntity[DimplexDataUpdateCoordinator], SensorEntit
             self._attr_available = value is not None
 
         # Add raw code for enum sensors
-        if desc.key in ("status", "lock"):
+        if desc.key in ("status", "lock", "error"):
             code_key = f"{desc.key}_code"
             if code_key in data:
                 self._attr_extra_state_attributes["code"] = data[code_key]

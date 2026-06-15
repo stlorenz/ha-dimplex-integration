@@ -1,25 +1,37 @@
 """Constants for the Dimplex integration."""
 
 from enum import StrEnum
-from typing import Final
+from typing import Any, Final
 
 DOMAIN = "dimplex"
 
 # Default configuration
 DEFAULT_NAME = "Dimplex"
 DEFAULT_PORT = 502  # Modbus TCP standard port
+DEFAULT_SLAVE_ID = 1  # Most Dimplex devices ship as Modbus unit 1
 
 # Configuration keys
 CONF_HOST = "host"
 CONF_PORT = "port"
 CONF_NAME = "name"
 CONF_MODEL = "model"
+CONF_SOFTWARE_VERSION = "software_version"
+CONF_SLAVE_ID = "slave_id"
 
 # Options keys (user-configurable features)
 OPT_COOLING_ENABLED = "cooling_enabled"
 OPT_DHW_ENABLED = "dhw_enabled"
 OPT_POOL_ENABLED = "pool_enabled"
 OPT_SECOND_HEATING_CIRCUIT = "second_heating_circuit"
+
+# Advanced capability options (user can override model defaults)
+# Note: CONF_MODEL can also be stored in options as an override
+OPT_PASSIVE_COOLING = "passive_cooling"
+OPT_DEFROST = "defrost"
+OPT_BRINE_CIRCUIT = "brine_circuit"
+OPT_HEAT_SOURCE = "heat_source"
+OPT_MAX_HEATING_POWER_KW = "max_heating_power_kw"
+OPT_MIN_HEATING_POWER_KW = "min_heating_power_kw"
 
 # Write protection
 ATTR_WRITE_ENABLED = "write_enabled"
@@ -52,7 +64,7 @@ MODEL_NAMES: Final[dict[str, str]] = {
 # Model capabilities - defines what features each model supports
 # "available" = hardware capability, user can enable/disable via options
 # True = always available, False = not available, "optional" = user choice
-MODEL_CAPABILITIES: Final[dict[str, dict[str, bool | str]]] = {
+MODEL_CAPABILITIES: Final[dict[str, dict[str, bool | str | int | None]]] = {
     HeatPumpModel.LA1422C: {
         "cooling_capable": True,  # Hardware supports cooling
         "cooling_default": False,  # But typically not installed
@@ -156,14 +168,40 @@ MODEL_CAPABILITIES: Final[dict[str, dict[str, bool | str]]] = {
 }
 
 
-def get_model_capabilities(model: str) -> dict[str, bool | str]:
-    """Get capabilities for a specific model.
+def get_model_capabilities(
+    model: str, user_overrides: dict[str, Any] | None = None
+) -> dict[str, bool | str | int | None]:
+    """Get capabilities for a specific model, with optional user overrides.
     
     Args:
         model: The heat pump model identifier
+        user_overrides: Optional dictionary of user-configured capability overrides
         
     Returns:
-        Dictionary of capabilities for the model
+        Dictionary of capabilities for the model, merged with user overrides
     """
-    return MODEL_CAPABILITIES.get(model, MODEL_CAPABILITIES[HeatPumpModel.GENERIC])
+    base_capabilities = MODEL_CAPABILITIES.get(
+        model, MODEL_CAPABILITIES[HeatPumpModel.GENERIC]
+    ).copy()
+    
+    # Merge user overrides if provided
+    if user_overrides:
+        # Map option keys to capability keys
+        option_to_capability = {
+            OPT_PASSIVE_COOLING: "passive_cooling",
+            OPT_DEFROST: "defrost",
+            OPT_BRINE_CIRCUIT: "brine_circuit",
+            OPT_HEAT_SOURCE: "heat_source",
+            OPT_MAX_HEATING_POWER_KW: "max_heating_power_kw",
+            OPT_MIN_HEATING_POWER_KW: "min_heating_power_kw",
+        }
+        
+        for option_key, capability_key in option_to_capability.items():
+            if option_key in user_overrides:
+                value = user_overrides[option_key]
+                # Only override if value is not None/empty
+                if value is not None and value != "":
+                    base_capabilities[capability_key] = value
+    
+    return base_capabilities
 

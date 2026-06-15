@@ -13,16 +13,26 @@ from .const import (
     CONF_MODEL,
     CONF_NAME,
     CONF_PORT,
+    CONF_SLAVE_ID,
+    CONF_SOFTWARE_VERSION,
     DEFAULT_PORT,
+    DEFAULT_SLAVE_ID,
     DOMAIN,
+    OPT_BRINE_CIRCUIT,
     OPT_COOLING_ENABLED,
+    OPT_DEFROST,
     OPT_DHW_ENABLED,
+    OPT_HEAT_SOURCE,
+    OPT_MAX_HEATING_POWER_KW,
+    OPT_MIN_HEATING_POWER_KW,
+    OPT_PASSIVE_COOLING,
     OPT_POOL_ENABLED,
     OPT_SECOND_HEATING_CIRCUIT,
     HeatPumpModel,
     get_model_capabilities,
 )
 from .coordinator import DimplexDataUpdateCoordinator
+from .modbus_registers import SoftwareVersion
 from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,9 +55,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Dimplex from a config entry."""
     _LOGGER.debug("Setting up Dimplex integration for entry: %s", entry.entry_id)
     
-    # Get model and capabilities
-    model = entry.data.get(CONF_MODEL, HeatPumpModel.GENERIC)
-    model_caps = get_model_capabilities(model)
+    # Get model (from options override if present, otherwise from data)
+    model = entry.options.get(CONF_MODEL) or entry.data.get(
+        CONF_MODEL, HeatPumpModel.GENERIC
+    )
+
+    # Software version: options override > entry data > default L/M.
+    sw_raw = entry.options.get(
+        CONF_SOFTWARE_VERSION,
+        entry.data.get(CONF_SOFTWARE_VERSION, int(SoftwareVersion.L_M)),
+    )
+    try:
+        software_version = SoftwareVersion(int(sw_raw))
+    except (ValueError, TypeError):
+        _LOGGER.warning(
+            "Invalid software_version %r in config entry; falling back to L/M",
+            sw_raw,
+        )
+        software_version = SoftwareVersion.L_M
+
+    slave_id = entry.data.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID)
+    
+    # Build user overrides from options
+    user_overrides = {
+        OPT_PASSIVE_COOLING: entry.options.get(OPT_PASSIVE_COOLING),
+        OPT_DEFROST: entry.options.get(OPT_DEFROST),
+        OPT_BRINE_CIRCUIT: entry.options.get(OPT_BRINE_CIRCUIT),
+        OPT_HEAT_SOURCE: entry.options.get(OPT_HEAT_SOURCE),
+        OPT_MAX_HEATING_POWER_KW: entry.options.get(OPT_MAX_HEATING_POWER_KW),
+        OPT_MIN_HEATING_POWER_KW: entry.options.get(OPT_MIN_HEATING_POWER_KW),
+    }
+    # Remove None values
+    user_overrides = {k: v for k, v in user_overrides.items() if v is not None}
+    
+    # Get model capabilities with user overrides applied
+    model_caps = get_model_capabilities(model, user_overrides if user_overrides else None)
 
     # Build effective capabilities from model defaults + user options
     capabilities = {
@@ -79,6 +121,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name=entry.data.get(CONF_NAME, "Dimplex"),
         model=model,
         capabilities=capabilities,
+        software_version=software_version,
+        slave_id=slave_id,
     )
 
     # First refresh: if it fails, mark the entry as not-ready so HA retries setup.

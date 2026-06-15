@@ -157,20 +157,86 @@ LOCK_MESSAGES_H: Final[dict[int, str]] = {
     7: "utility_lock",
 }
 
-# Error Messages (Störmeldungen) - Will be populated when documentation is available
-# Reference: https://dimplex.atlassian.net/wiki/spaces/DW/pages/3340960678/Modbus+TCP+-+Störmeldungen
+# Error Messages (Störmeldungen)
+# Source: Dimplex WPM Touch operating instructions, FD 0101 (452117.66.02-EN),
+# §11 "Error history" (F1..F31). The Modbus error register holds the numeric
+# code; the F-prefix in the WPM UI maps 1:1 to that number.
+# Reference: https://dimplex.atlassian.net/wiki/spaces/DW/pages/3340960678/Modbus+TCP+-+Stoermeldungen
+#
+# Note: Codes 4, 9, 11..14, 17, 18, 27 are documented as "reserved / unused"
+# in WPM Touch FD 0101 — they're intentionally absent from this map.
 ERROR_MESSAGES: Final[dict[int, str]] = {
     0: "none",
-    # TODO: Add complete error message mappings when documentation is accessed
-    # Error codes range from 1-31
+    1: "extension_n17_1_general_cooling",
+    2: "extension_n17_2_active_cooling",
+    3: "extension_n17_3_passive_cooling",
+    5: "extension_n17_cooling",
+    6: "electronic_expansion_valve",
+    7: "rth_room_modulator",
+    8: "odu_extension",
+    10: "wpio_extension",
+    15: "sensors",
+    16: "brine_pressure_monitor",
+    19: "primary_circuit",
+    20: "defrost",
+    21: "brine_pressure_monitor",
+    22: "domestic_hot_water",
+    23: "compressor_load",
+    24: "coding",
+    25: "low_pressure",
+    26: "frost_protection",
+    28: "high_pressure",
+    29: "temperature_difference",
+    30: "hot_gas_thermostat",
+    31: "flow",
 }
 
-# Sensor Error Messages (Sensorfehler) - Available only in L/M software
-# Reference: Mentioned in system status, range 1-27
+ERROR_TRANSLATIONS_EN: Final[dict[str, str]] = {
+    "none": "No Fault",
+    "extension_n17_1_general_cooling":
+        "F1 — Extension N17.1 (General Cooling) not detected",
+    "extension_n17_2_active_cooling":
+        "F2 — Extension N17.2 (Active Cooling) not detected",
+    "extension_n17_3_passive_cooling":
+        "F3 — Extension N17.3 (Passive Cooling) not detected",
+    "extension_n17_cooling": "F5 — Extension N17 (Cooling) not detected",
+    "electronic_expansion_valve": "F6 — Electronic expansion valve not detected",
+    "rth_room_modulator": "F7 — RTH room modulator not detected",
+    "odu_extension": "F8 — ODU / refrigeration circuit controller not detected",
+    "wpio_extension": "F10 — WPIO extension fault",
+    "sensors": "F15 — Sensor fault (cause shown on WPM display)",
+    "brine_pressure_monitor": "F16/F21 — Brine pressure monitor tripped",
+    "primary_circuit":
+        "F19 — Primary circuit fault (pump/fan motor protection)",
+    "defrost": "F20 — Defrost could not start or finish properly",
+    "domestic_hot_water":
+        "F22 — Domestic hot water temperature below 35 °C in heat-pump mode",
+    "compressor_load":
+        "F23 — Compressor load fault (rotation, phase, undervoltage, etc.)",
+    "coding": "F24 — Coding does not match heat pump type",
+    "low_pressure": "F25 — Heat source delivering insufficient energy",
+    "frost_protection": "F26 — Flow temperature below 7 °C (frost protection)",
+    "high_pressure":
+        "F28 — High pressure sensor / pressostat tripped",
+    "temperature_difference":
+        "F29 — Flow/return temperature difference too large or negative",
+    "hot_gas_thermostat": "F30 — Hot gas thermostat",
+    "flow": "F31 — No flow in primary or secondary circuit",
+}
+
+# Sensor Error Messages (Sensorfehler) - L/M software only.
+# Reference: range 1..27 in the sensor-error register. The number identifies
+# which physical sensor (R1, R2, R3, …) is broken or short-circuited.
+# The Dimplex WPM Touch manual lumps all of these into the generic "F15 Sensors"
+# fault; the per-sensor mapping is not published in the public docs.
+#
+# UNVERIFIED: Codes 1..27 listed here follow the standard WPM sensor labelling
+# (R1 = outside, R2 = return, R3 = DHW, …). Replace with verified values once
+# Dimplex's Modbus reference for register 106 is available.
 SENSOR_ERROR_MESSAGES: Final[dict[int, str]] = {
     0: "none",
-    # TODO: Add sensor error mappings when documentation is accessed
-    # Sensor error codes range from 1-27
+    # Numeric → identifier mapping not yet authoritatively documented for
+    # Modbus register 106. Codes are surfaced as the raw integer until then.
 }
 
 
@@ -301,4 +367,16 @@ def get_error_register(software_version: SoftwareVersion) -> int:
 def get_sensor_error_register(software_version: SoftwareVersion) -> int | None:
     """Get the correct sensor error register address for the software version."""
     return RegisterAddress.SENSOR_ERROR.get(software_version)
+
+
+def get_error_message(value: int, software_version: SoftwareVersion) -> str:
+    """Map a numeric error register value to a stable string identifier.
+
+    The published WPM Touch (FD 0101) F-code table is treated as authoritative
+    for software L/M; H and J return the same mapping until version-specific
+    differences are documented.
+    """
+    # Currently no per-version differences known; ERROR_MESSAGES is shared.
+    del software_version  # placeholder for future per-version splits
+    return ERROR_MESSAGES.get(value, f"unknown_{value}")
 

@@ -37,16 +37,21 @@ COP_SMOOTHING_ALPHA = 0.3
 class DimplexModbusClient:
     """Dimplex Modbus TCP client wrapper."""
 
-    def __init__(self, host: str, port: int = DEFAULT_PORT) -> None:
+    def __init__(
+        self, host: str, port: int = DEFAULT_PORT, slave_id: int = 1
+    ) -> None:
         """Initialize the Modbus client.
 
         Args:
             host: IP address or hostname of the Dimplex device
             port: Modbus TCP port (default: 502)
+            slave_id: Modbus unit/slave ID used as the default for all reads/writes
+                (default: 1)
 
         """
         self.host = host
         self.port = port
+        self.slave_id = slave_id
         self._client: AsyncModbusTcpClient | None = None
         self._connected = False
         # pymodbus renamed the slave/unit parameter over time.
@@ -155,14 +160,14 @@ class DimplexModbusClient:
         return self._connected and self._client is not None and self._client.connected
 
     async def read_holding_registers(
-        self, address: int, count: int = 1, slave: int = 1
+        self, address: int, count: int = 1, slave: int | None = None
     ) -> list[int] | None:
         """Read holding registers from the device.
 
         Args:
             address: Starting register address
             count: Number of registers to read
-            slave: Modbus slave ID (default: 1)
+            slave: Modbus slave ID; falls back to the client's configured ID
 
         Returns:
             List of register values or None on error
@@ -172,12 +177,13 @@ class DimplexModbusClient:
             _LOGGER.warning("Cannot read registers: not connected")
             return None
 
+        unit_id = slave if slave is not None else self.slave_id
         try:
             result = await self._call_with_unit_id(
                 self._client.read_holding_registers,
                 address=address,
                 count=count,
-                unit_id=slave,
+                unit_id=unit_id,
             )
 
             if result.isError():
@@ -194,14 +200,14 @@ class DimplexModbusClient:
             return None
 
     async def read_input_registers(
-        self, address: int, count: int = 1, slave: int = 1
+        self, address: int, count: int = 1, slave: int | None = None
     ) -> list[int] | None:
         """Read input registers from the device.
 
         Args:
             address: Starting register address
             count: Number of registers to read
-            slave: Modbus slave ID (default: 1)
+            slave: Modbus slave ID; falls back to the client's configured ID
 
         Returns:
             List of register values or None on error
@@ -211,12 +217,13 @@ class DimplexModbusClient:
             _LOGGER.warning("Cannot read registers: not connected")
             return None
 
+        unit_id = slave if slave is not None else self.slave_id
         try:
             result = await self._call_with_unit_id(
                 self._client.read_input_registers,
                 address=address,
                 count=count,
-                unit_id=slave,
+                unit_id=unit_id,
             )
 
             if result.isError():
@@ -233,14 +240,14 @@ class DimplexModbusClient:
             return None
 
     async def write_register(
-        self, address: int, value: int, slave: int = 1
+        self, address: int, value: int, slave: int | None = None
     ) -> bool:
         """Write a single register to the device.
 
         Args:
             address: Register address
             value: Value to write
-            slave: Modbus slave ID (default: 1)
+            slave: Modbus slave ID; falls back to the client's configured ID
 
         Returns:
             True if write successful, False otherwise
@@ -250,12 +257,13 @@ class DimplexModbusClient:
             _LOGGER.warning("Cannot write register: not connected")
             return False
 
+        unit_id = slave if slave is not None else self.slave_id
         try:
             result = await self._call_with_unit_id(
                 self._client.write_register,
                 address=address,
                 value=value,
-                unit_id=slave,
+                unit_id=unit_id,
             )
 
             if result.isError():
@@ -321,20 +329,20 @@ class DimplexModbusClient:
     async def _read_register_with_definition(
         self,
         register_def: RegisterDefinition,
-        slave: int = 1,
+        slave: int | None = None,
     ) -> float | None:
         """Read a register using its definition and return scaled value.
-        
+
         Args:
             register_def: Register definition with address, scale, etc.
-            slave: Modbus slave ID
-            
+            slave: Modbus slave ID; falls back to the client's configured ID
+
         Returns:
             Scaled float value or None if read failed
         """
         if register_def.address is None:
             return None
-            
+
         count = register_def.size
         # Pass unit id positionally to avoid keyword name churn ("slave"/"unit"/"device_id")
         # and to satisfy stricter type checkers.

@@ -8,7 +8,9 @@
           "host": "Host or IP Address",
           "port": "Port",
           "name": "Device Name",
-          "model": "Heat Pump Model"
+          "model": "Heat Pump Model",
+          "software_version": "WPM Software Version",
+          "slave_id": "Modbus Unit / Slave ID"
         }
       }
     },
@@ -24,13 +26,27 @@
   "options": {
     "step": {
       "init": {
-        "title": "Dimplex Features",
-        "description": "Configure installed features for your {model}. Only enable features that are actually installed in your heating system.",
+        "title": "Select Model",
+        "description": "Select your heat pump model and WPM software version. This determines default capabilities and register addresses, which you can customize in the next step.",
+        "data": {
+          "model": "Heat Pump Model",
+          "software_version": "WPM Software Version"
+        }
+      },
+      "features": {
+        "title": "Configure Features",
+        "description": "Configure installed features and capabilities for your {model}. Override model defaults to match your specific installation.",
         "data": {
           "cooling_enabled": "Cooling Installed",
           "dhw_enabled": "Domestic Hot Water (DHW) Tank",
           "pool_enabled": "Pool Heating Circuit",
-          "second_heating_circuit": "Second Heating Circuit (HC2)"
+          "second_heating_circuit": "Second Heating Circuit (HC2)",
+          "passive_cooling": "Passive Cooling Supported",
+          "defrost": "Defrost Function Available",
+          "brine_circuit": "Brine Circuit Present",
+          "heat_source": "Heat Source Type",
+          "max_heating_power_kw": "Maximum Heating Power (kW)",
+          "min_heating_power_kw": "Minimum Heating Power (kW)"
         }
       }
     }
@@ -116,6 +132,33 @@
       },
       "status_code": {
         "name": "Status Code"
+      },
+      "error": {
+        "name": "Error",
+        "state": {
+          "none": "No Fault",
+          "extension_n17_1_general_cooling": "F1 — Extension N17.1 (General Cooling)",
+          "extension_n17_2_active_cooling": "F2 — Extension N17.2 (Active Cooling)",
+          "extension_n17_3_passive_cooling": "F3 — Extension N17.3 (Passive Cooling)",
+          "extension_n17_cooling": "F5 — Extension N17 (Cooling)",
+          "electronic_expansion_valve": "F6 — Electronic Expansion Valve",
+          "rth_room_modulator": "F7 — RTH Room Modulator",
+          "odu_extension": "F8 — ODU Extension",
+          "wpio_extension": "F10 — WPIO Extension",
+          "sensors": "F15 — Sensor Fault",
+          "brine_pressure_monitor": "F16 / F21 — Brine Pressure Monitor",
+          "primary_circuit": "F19 — Primary Circuit",
+          "defrost": "F20 — Defrost Failed",
+          "domestic_hot_water": "F22 — Domestic Hot Water",
+          "compressor_load": "F23 — Compressor Load",
+          "coding": "F24 — Coding Mismatch",
+          "low_pressure": "F25 — Low Pressure / Heat Source",
+          "frost_protection": "F26 — Frost Protection",
+          "high_pressure": "F28 — High Pressure",
+          "temperature_difference": "F29 — Flow/Return Temperature Difference",
+          "hot_gas_thermostat": "F30 — Hot Gas Thermostat",
+          "flow": "F31 — Flow Lost"
+        }
       },
       "lock_code": {
         "name": "Lock Code"

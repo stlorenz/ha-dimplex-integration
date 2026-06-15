@@ -26,8 +26,8 @@ from .modbus_registers_extended import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# Log once at module load if registers are not configured
-_REGISTERS_WARNING_LOGGED = False
+# Per-entry deduplication of register-not-configured warnings.
+_REGISTER_WARNINGS_LOGGED: set[str] = set()
 
 
 async def async_setup_entry(
@@ -72,9 +72,8 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
             "model": coordinator.model_name,
         }
         
-        # Log warning about unconfigured registers (once per setup)
-        global _REGISTERS_WARNING_LOGGED
-        if not _REGISTERS_WARNING_LOGGED:
+        # Log warning about unconfigured registers (once per config entry)
+        if entry.entry_id not in _REGISTER_WARNINGS_LOGGED:
             if not self._has_temperature_register():
                 _LOGGER.warning(
                     "Temperature setpoint register not configured for software version %s. "
@@ -87,7 +86,7 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
                     "HVAC mode control will be disabled. See modbus_registers_extended.py",
                     coordinator.software_version,
                 )
-            _REGISTERS_WARNING_LOGGED = True
+            _REGISTER_WARNINGS_LOGGED.add(entry.entry_id)
 
     @property
     def supported_features(self) -> ClimateEntityFeature:
