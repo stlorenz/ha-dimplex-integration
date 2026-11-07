@@ -40,6 +40,7 @@ _LOGGER = logging.getLogger(__name__)
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.CLIMATE,
+    Platform.NUMBER,
     Platform.SENSOR,
     Platform.SWITCH,
 ]
@@ -123,6 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         capabilities=capabilities,
         software_version=software_version,
         slave_id=slave_id,
+        config_entry=entry,
     )
 
     # First refresh: if it fails, mark the entry as not-ready so HA retries setup.

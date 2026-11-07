@@ -113,7 +113,7 @@ async def test_coordinator_update_no_data(hass: HomeAssistant):
         type(coordinator.client).is_connected = property(lambda self: True)
         coordinator.client.read_system_status = AsyncMock(return_value={})
         
-        with pytest.raises(UpdateFailed, match="No data received"):
+        with pytest.raises(UpdateFailed, match="No valid status data received"):
             await coordinator._async_update_data()
 
 

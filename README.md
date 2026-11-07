@@ -31,6 +31,41 @@ A custom Home Assistant integration for Dimplex heat pumps with NWPM Touch Exten
 - HVAC mode display
 - **Note:** Temperature and mode control require Modbus register addresses to be configured. Currently the integration is read-only for monitoring purposes.
 
+### Hot Water Settings (writable, WPM software J/L/M)
+Number entities backed by the verified holding registers from the Dimplex wiki
+("Modbus TCP - Einstellungen Warmwasser"):
+
+| Entity | Register | Range |
+|---|---|---|
+| `number.<name>_hot_water_setpoint` | 5047 | min..85 °C |
+| `number.<name>_hot_water_max_setpoint` | 5048 | setpoint..85 °C |
+| `number.<name>_hot_water_min_setpoint` | 5145 | 10..setpoint °C |
+| `number.<name>_hot_water_hysteresis` | 5045 | 2..15 K |
+
+Writes require the **Write Enable** switch. The WPM applies a new value with a
+short delay (a few seconds up to one poll interval); the entity shows the new
+value optimistically until the next poll confirms it.
+
+### Time Programme Services
+- `dimplex.set_time_program` – write a complete raise/lower (Anhebung/Absenkung)
+  programme of heating circuit 1–3 in one call: two time windows, weekday mode
+  and the offset in K (registers 5065 selector + 5066..5081). Returns the
+  read-back block so automations can verify the write.
+- `dimplex.read_time_program` – read the current programme of a time function.
+
+Both require **Write Enable** (reading needs the selector write).
+
+```yaml
+action: dimplex.set_time_program
+data:
+  function: hc2_raise      # floor-heating circuit, raise
+  window1_start: "02:00"
+  window1_end: "06:00"
+  window2_start: "12:00"
+  window2_end: "16:00"
+  value: 4                 # K
+```
+
 ### Model-Specific Configuration
 - Select your heat pump model (LA1422C, LA Series, SI Series, etc.)
 - Configure installed features (Cooling, DHW, Pool, Second Heating Circuit)
@@ -157,6 +192,11 @@ entities:
   - entity: sensor.dimplex_lock
 title: Heat Pump Status
 ```
+
+## Home Assistant Compatibility
+
+Requires Home Assistant **2024.11 or newer** (the coordinator passes its config
+entry explicitly, as required by current HA). Tested against HA 2026.2.
 
 ## Software Version Support
 

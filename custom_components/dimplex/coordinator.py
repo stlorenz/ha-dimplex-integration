@@ -6,6 +6,7 @@ from datetime import timedelta
 import logging
 from typing import Any
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -38,6 +39,7 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         model: str = HeatPumpModel.GENERIC,
         capabilities: dict[str, Any] | None = None,
         slave_id: int = 1,
+        config_entry: ConfigEntry | None = None,
     ) -> None:
         """Initialize.
 
@@ -50,6 +52,8 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             model: Heat pump model identifier
             capabilities: Dictionary of device capabilities and enabled features
             slave_id: Modbus unit/slave ID (defaults to 1)
+            config_entry: Owning config entry (required by HA >= 2025.11 for
+                DataUpdateCoordinator; implicit detection is deprecated)
 
         """
         self.host = host
@@ -68,6 +72,7 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER,
             name=DOMAIN,
             update_interval=timedelta(seconds=30),
+            config_entry=config_entry,
         )
         _LOGGER.info(
             "Initialized Dimplex coordinator for %s at %s:%s with %d second update interval",
@@ -216,6 +221,10 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             )
             return data
 
+        except UpdateFailed:
+            # Already a well-formed coordinator error (e.g. no valid status data);
+            # don't wrap it in a generic "Unexpected error".
+            raise
         except TimeoutError as err:
             _LOGGER.warning("Timeout communicating with Dimplex device: %s", err)
             # Mark connection as lost on timeout

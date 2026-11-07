@@ -136,7 +136,7 @@ This document tracks the implementation status of the Dimplex Heat Pump Home Ass
 - ⬜ Heating curve adjustment
 - ⬜ Comfort temperature setpoint
 - ⬜ Reduced temperature setpoint
-- ⬜ Hot water temperature setpoint
+- ✅ Hot water temperature setpoint (number entity, register 5047)
 
 #### Select Entities
 - ⬜ Operating mode selection
@@ -157,7 +157,7 @@ This document tracks the implementation status of the Dimplex Heat Pump Home Ass
 - ⬜ Outputs (Ausgänge) registers
 - ⬜ Settings 1st Heating/Cooling Circuit registers
 - ⬜ Settings 2nd/3rd Heating/Cooling Circuit registers
-- ⬜ Hot Water Settings (Warmwasser) registers
+- ✅ Hot Water Settings (Warmwasser) registers: 5045 hysteresis, 5047 setpoint, 5048 max, 5145 min (verified on LA 1422C, WPM L/M)
 - ⬜ Swimming Pool Settings (Schwimmbad) registers
 - ⬜ 2nd Heat Generator Settings registers
 

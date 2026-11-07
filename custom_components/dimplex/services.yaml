@@ -142,3 +142,119 @@ diagnose_registers:
           min: 0
           max: 247
           mode: box
+
+set_time_program:
+  name: Set raise/lower time programme
+  description: >-
+    Write one complete Absenkung/Anhebung time programme of a heating circuit
+    in one call (selector register 5065, then block 5066..5081). Requires the
+    "Write Enable" switch. Returns the read-back block so you can verify.
+  fields:
+    entry_id:
+      name: Config entry
+      required: false
+      selector:
+        text:
+    function:
+      name: Time function
+      description: Which programme to write (circuit + raise/lower).
+      required: true
+      default: hc2_raise
+      selector:
+        select:
+          options:
+            - hc1_lower
+            - hc1_raise
+            - hc2_lower
+            - hc2_raise
+            - hc3_lower
+            - hc3_raise
+    window1_start:
+      name: Window 1 start
+      required: true
+      example: "02:00"
+      selector:
+        time:
+    window1_end:
+      name: Window 1 end
+      required: true
+      example: "06:00"
+      selector:
+        time:
+    window2_start:
+      name: Window 2 start
+      required: false
+      example: "12:00"
+      selector:
+        time:
+    window2_end:
+      name: Window 2 end
+      required: false
+      example: "16:00"
+      selector:
+        time:
+    value:
+      name: Raise/lower value
+      description: Temperature offset applied inside the windows (K).
+      required: true
+      default: 4
+      selector:
+        number:
+          min: 0
+          max: 19
+          unit_of_measurement: K
+    weekdays:
+      name: Weekdays
+      description: Apply both windows, only one window, or disable on all days.
+      required: false
+      default: both
+      selector:
+        select:
+          options:
+            - both
+            - window1
+            - window2
+            - off
+    unit_id:
+      name: Modbus unit / slave ID
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 0
+          max: 247
+          mode: box
+
+read_time_program:
+  name: Read raise/lower time programme
+  description: >-
+    Select a time function (writes register 5065, so "Write Enable" must be
+    on) and return its windows, weekday flags and value.
+  fields:
+    entry_id:
+      name: Config entry
+      required: false
+      selector:
+        text:
+    function:
+      name: Time function
+      required: true
+      default: hc2_raise
+      selector:
+        select:
+          options:
+            - hc1_lower
+            - hc1_raise
+            - hc2_lower
+            - hc2_raise
+            - hc3_lower
+            - hc3_raise
+    unit_id:
+      name: Modbus unit / slave ID
+      required: false
+      default: 1
+      selector:
+        number:
+          min: 0
+          max: 247
+          mode: box
