@@ -26,8 +26,8 @@ TIME_PROGRAM_SELECT_REGISTER = 5065
 TIME_PROGRAM_BLOCK_START = 5066  # window1 start h/min, end h/min, window2 ..., 7 weekdays, value
 TIME_PROGRAM_BLOCK_LEN = 16
 TIME_PROGRAM_FUNCTIONS: dict[str, int] = {
-    # 1/2 for the 1st heating circuit are not documented on the wiki page for
-    # circuits 2/3 but follow the same numbering (confirmed by the FHEM module).
+    # Verified on WPM Touch (L/M), LA 1422C: 2 = HC1 raise, 3 = HC2 lower,
+    # 4 = HC2 raise (programme shows up under "2. Heizkreis" in the Wochenprofil).
     "hc1_lower": 1,
     "hc1_raise": 2,
     "hc2_lower": 3,
@@ -235,8 +235,23 @@ async def async_register_services(hass: HomeAssistant) -> None:
             vol.Optional("window2_end"): cv_time_hhmm,
             vol.Required("value"): vol.All(vol.Coerce(int), vol.Range(min=0, max=19)),
             vol.Optional("weekdays", default="both"): vol.In(list(WEEKDAY_MODES)),
+            vol.Optional("readback_delay", default=5): vol.All(
+                vol.Coerce(float), vol.Range(min=0, max=60)
+            ),
         }
     )
+
+    def _check_window(start: tuple[int, int], end: tuple[int, int], label: str) -> None:
+        """The WPM rejects windows that cross midnight and silently rewrites the
+        whole block (observed on WPM Touch L/M: 16:00-02:00 became 06:00-23:59 /
+        16:00-23:59 and one weekday was disabled). Refuse them up front."""
+        if (end[0], end[1]) <= (start[0], start[1]):
+            raise HomeAssistantError(
+                f"{label}: end must be later than start on the same day "
+                f"(got {start[0]:02d}:{start[1]:02d}-{end[0]:02d}:{end[1]:02d}); "
+                "windows crossing midnight are not supported by the WPM - "
+                "use 23:59 as end and a second window from 00:00 if needed."
+            )
 
     async def handle_set_time_program(call: ServiceCall) -> dict[str, Any]:
         """Write one complete raise/lower time programme in one go.
@@ -258,6 +273,9 @@ async def async_register_services(hass: HomeAssistant) -> None:
         if "window2_start" not in call.data:
             # No second window: collapse it to a zero-length window.
             w2s = w2e = w1e
+        _check_window(w1s, w1e, "window 1")
+        if w2s != w2e:
+            _check_window(w2s, w2e, "window 2")
         weekday_mode = WEEKDAY_MODES[call.data["weekdays"]]
 
         values = [
@@ -268,7 +286,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
         ]
         function = TIME_PROGRAM_FUNCTIONS[call.data["function"]]
 
-        async with asyncio.timeout(30):
+        async with asyncio.timeout(90):
             await _ensure_connected(coordinator)
             ok = await coordinator.client.write_register(
                 address=TIME_PROGRAM_SELECT_REGISTER, value=function, slave=unit_id
@@ -285,6 +303,9 @@ async def async_register_services(hass: HomeAssistant) -> None:
                     raise HomeAssistantError(
                         f"Write failed at register {TIME_PROGRAM_BLOCK_START + offset}"
                     )
+            # The WPM validates the block after the write and may rewrite it;
+            # read back only after it had time to do so.
+            await asyncio.sleep(float(call.data["readback_delay"]))
             readback = await coordinator.client.read_holding_registers(
                 TIME_PROGRAM_BLOCK_START, count=TIME_PROGRAM_BLOCK_LEN, slave=unit_id
             )

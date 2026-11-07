@@ -190,6 +190,7 @@ async def test_set_time_program_writes_selector_then_block(hass):
             "window2_start": "12:00",
             "window2_end": "16:00",
             "value": 4,
+            "readback_delay": 0,
         },
         blocking=True,
         return_response=True,
@@ -246,3 +247,40 @@ def test_cv_time_hhmm_validation():
     for bad in ("24:00", "12:60", "abc", "12"):
         with pytest.raises(vol.Invalid):
             cv_time_hhmm(bad)
+
+
+@pytest.mark.asyncio
+async def test_set_time_program_rejects_midnight_crossing_window(hass):
+    """The WPM silently rewrites windows that cross midnight; refuse them."""
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.dimplex.services import SERVICE_SET_TIME_PROGRAM
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"host": "1.2.3.4"})
+    entry.add_to_hass(hass)
+    coordinator = Mock()
+    coordinator.client = Mock()
+    coordinator.client.is_connected = True
+    coordinator.client.write_register = AsyncMock(return_value=True)
+    coordinator.write_enabled = True
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+    await async_register_services(hass)
+
+    with pytest.raises(HomeAssistantError, match="crossing midnight"):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_TIME_PROGRAM,
+            {
+                "entry_id": entry.entry_id,
+                "function": "hc2_lower",
+                "window1_start": "06:00",
+                "window1_end": "12:00",
+                "window2_start": "16:00",
+                "window2_end": "02:00",
+                "value": 5,
+            },
+            blocking=True,
+            return_response=True,
+        )
+    coordinator.client.write_register.assert_not_awaited()

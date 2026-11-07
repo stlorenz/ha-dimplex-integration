@@ -215,6 +215,18 @@ set_time_program:
             - window1
             - window2
             - off
+    readback_delay:
+      name: Read-back delay
+      description: >-
+        Seconds to wait before reading the block back. The WPM validates and
+        may rewrite the programme shortly after the write; 5 s is safe.
+      required: false
+      default: 5
+      selector:
+        number:
+          min: 0
+          max: 60
+          unit_of_measurement: s
     unit_id:
       name: Modbus unit / slave ID
       required: false
