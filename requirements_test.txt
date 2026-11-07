@@ -5,7 +5,7 @@ pytest-cov>=4.1.0
 pytest-homeassistant-custom-component>=0.13.0
 
 # Home Assistant testing
-homeassistant>=2024.1.0
+homeassistant>=2024.11.0
 
 # Dependencies
 pymodbus>=3.5.0

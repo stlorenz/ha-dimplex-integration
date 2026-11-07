@@ -154,3 +154,95 @@ async def test_diagnose_registers_returns_all_interpretations(hass):
     assert runtime["big_endian_unsigned"] == 12345
     assert runtime["little_endian_unsigned"] == 12345 << 16
 
+
+
+@pytest.mark.asyncio
+async def test_set_time_program_writes_selector_then_block(hass):
+    """set_time_program selects the function (5065) and writes 5066..5081 in order."""
+    from custom_components.dimplex.services import SERVICE_SET_TIME_PROGRAM
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"host": "1.2.3.4"})
+    entry.add_to_hass(hass)
+
+    expected_block = [2, 0, 6, 0, 12, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0, 4]
+    client = Mock()
+    client.is_connected = True
+    client.connect = AsyncMock(return_value=True)
+    client.write_register = AsyncMock(return_value=True)
+    client.read_holding_registers = AsyncMock(return_value=expected_block)
+
+    coordinator = Mock()
+    coordinator.client = client
+    coordinator.write_enabled = True
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    await async_register_services(hass)
+
+    resp = await hass.services.async_call(
+        DOMAIN,
+        SERVICE_SET_TIME_PROGRAM,
+        {
+            "entry_id": entry.entry_id,
+            "function": "hc2_raise",
+            "window1_start": "02:00",
+            "window1_end": "06:00",
+            "window2_start": "12:00",
+            "window2_end": "16:00",
+            "value": 4,
+        },
+        blocking=True,
+        return_response=True,
+    )
+
+    calls = client.write_register.await_args_list
+    assert calls[0].kwargs == {"address": 5065, "value": 4, "slave": 1}
+    written = [(c.kwargs["address"], c.kwargs["value"]) for c in calls[1:]]
+    assert written == list(zip(range(5066, 5082), expected_block))
+    assert resp["success"] is True
+    assert resp["readback"] == expected_block
+
+
+@pytest.mark.asyncio
+async def test_set_time_program_requires_write_enabled(hass):
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.dimplex.services import SERVICE_SET_TIME_PROGRAM
+
+    entry = MockConfigEntry(domain=DOMAIN, data={"host": "1.2.3.4"})
+    entry.add_to_hass(hass)
+    coordinator = Mock()
+    coordinator.client = Mock()
+    coordinator.client.write_register = AsyncMock(return_value=True)
+    coordinator.write_enabled = False
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+    await async_register_services(hass)
+
+    with pytest.raises(HomeAssistantError):
+        await hass.services.async_call(
+            DOMAIN,
+            SERVICE_SET_TIME_PROGRAM,
+            {
+                "entry_id": entry.entry_id,
+                "function": "hc2_raise",
+                "window1_start": "02:00",
+                "window1_end": "06:00",
+                "value": 4,
+            },
+            blocking=True,
+            return_response=True,
+        )
+    coordinator.client.write_register.assert_not_awaited()
+
+
+def test_cv_time_hhmm_validation():
+    import voluptuous as vol
+
+    from custom_components.dimplex.services import cv_time_hhmm
+
+    assert cv_time_hhmm("02:00") == (2, 0)
+    assert cv_time_hhmm("16:30:00") == (16, 30)
+    for bad in ("24:00", "12:60", "abc", "12"):
+        with pytest.raises(vol.Invalid):
+            cv_time_hhmm(bad)

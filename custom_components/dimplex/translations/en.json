@@ -242,7 +242,20 @@
       "write_enable": {
         "name": "Write Enable"
       }
+    },
+    "number": {
+      "hot_water_setpoint_setting": {
+        "name": "Hot Water Setpoint"
+      },
+      "hot_water_max_setpoint": {
+        "name": "Hot Water Max Setpoint"
+      },
+      "hot_water_min_setpoint": {
+        "name": "Hot Water Min Setpoint"
+      },
+      "hot_water_hysteresis": {
+        "name": "Hot Water Hysteresis"
+      }
     }
   }
 }
-

@@ -597,6 +597,9 @@ class SettingsRegisters:
     """Settings register addresses - many are read/write."""
 
     # Heating Circuit 1
+    # UNVERIFIED: addresses 200-202 are placeholders from the initial
+    # implementation and have never been confirmed against the Dimplex wiki
+    # ("Modbus TCP - Einstellungen 1. Heiz-/Kühlkreis"). Do not rely on them.
     HC1_COMFORT_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
         SoftwareVersion.H: RegisterDefinition(address=None),
         SoftwareVersion.J: RegisterDefinition(address=None),
@@ -615,17 +618,47 @@ class SettingsRegisters:
         SoftwareVersion.L_M: RegisterDefinition(address=202, scale=0.01, unit=""),
     }
 
-    # Hot Water
+    # Hot Water (Einstellungen Warmwasser)
+    # Verified against Dimplex wiki "Modbus TCP - Einstellungen Warmwasser"
+    # (WPM software J/L/M) and empirically on an LA 1422C / WPM Touch (L/M):
+    # reading 5046..5048 returned [-25, 45, 60] with WW-Soll 45 °C / WW-Max 60 °C,
+    # writing 48 to 5047 was accepted by the WPM. Values are whole °C / K
+    # (uint16, scale 1), NOT 0.1 °C like the operating-data temperatures.
     HOT_WATER_COMFORT_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
+        # Solltemperatur (R/W, range: Solltemp. Min. .. 85 °C)
         SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=None),
-        SoftwareVersion.L_M: RegisterDefinition(address=210, scale=0.1, unit="°C"),
+        SoftwareVersion.J: RegisterDefinition(address=5047, scale=1.0, unit="°C", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=5047, scale=1.0, unit="°C", signed=False),
     }
 
     HOT_WATER_REDUCED_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
+        # The WPM has no separate "reduced" hot water setpoint register; the
+        # night/day reduction is realised via the WPM time programme as an
+        # offset on the setpoint. Kept for API compatibility, never available.
         SoftwareVersion.H: RegisterDefinition(address=None),
         SoftwareVersion.J: RegisterDefinition(address=None),
-        SoftwareVersion.L_M: RegisterDefinition(address=211, scale=0.1, unit="°C"),
+        SoftwareVersion.L_M: RegisterDefinition(address=None),
+    }
+
+    HOT_WATER_MAX_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
+        # Solltemperatur Maximal (R/W, range: Soll .. 85 °C)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=5048, scale=1.0, unit="°C", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=5048, scale=1.0, unit="°C", signed=False),
+    }
+
+    HOT_WATER_MIN_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
+        # Solltemperatur Minimal (R/W, range: 10 .. Soll)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=5145, scale=1.0, unit="°C", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=5145, scale=1.0, unit="°C", signed=False),
+    }
+
+    HOT_WATER_HYSTERESIS: dict[SoftwareVersion, RegisterDefinition] = {
+        # Hysterese (R/W, range: 2 .. 15 K)
+        SoftwareVersion.H: RegisterDefinition(address=None),
+        SoftwareVersion.J: RegisterDefinition(address=5045, scale=1.0, unit="K", signed=False),
+        SoftwareVersion.L_M: RegisterDefinition(address=5045, scale=1.0, unit="K", signed=False),
     }
 
 

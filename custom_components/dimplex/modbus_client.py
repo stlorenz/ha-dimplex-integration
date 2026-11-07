@@ -12,6 +12,7 @@ from .modbus_registers_extended import (
     OperatingDataRegisters,
     RegisterDefinition,
     RuntimeRegisters,
+    SettingsRegisters,
     get_register_definition,
     read_32bit_value,
     scale_value,
@@ -510,5 +511,19 @@ class DimplexModbusClient:
                     data["cop"] = round(self._smoothed_cop, 2)
                 # If no previous value, don't set COP (will be None/unavailable)
         
+        # Read writable hot water settings (whole °C / K, see SettingsRegisters)
+        settings_registers = [
+            ("hot_water_setpoint_setting", SettingsRegisters.HOT_WATER_COMFORT_SETPOINT),
+            ("hot_water_max_setpoint", SettingsRegisters.HOT_WATER_MAX_SETPOINT),
+            ("hot_water_min_setpoint", SettingsRegisters.HOT_WATER_MIN_SETPOINT),
+            ("hot_water_hysteresis", SettingsRegisters.HOT_WATER_HYSTERESIS),
+        ]
+        for key, register_dict in settings_registers:
+            reg_def = get_register_definition(register_dict, software_version)
+            if reg_def is not None:
+                value = await self._read_register_with_definition(reg_def)
+                if value is not None:
+                    data[key] = value
+
         _LOGGER.debug("Read operating data: %s", data)
         return data
