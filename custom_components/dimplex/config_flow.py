@@ -1,15 +1,14 @@
 """Config flow for Dimplex integration."""
+
 from __future__ import annotations
 
 import logging
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.data_entry_flow import AbortFlow
-from homeassistant.data_entry_flow import FlowResult
+from homeassistant.data_entry_flow import AbortFlow, FlowResult
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
@@ -21,8 +20,11 @@ from .const import (
     CONF_SOFTWARE_VERSION,
     DEFAULT_NAME,
     DEFAULT_PORT,
+    DEFAULT_SCAN_INTERVAL,
     DEFAULT_SLAVE_ID,
     DOMAIN,
+    MAX_SCAN_INTERVAL,
+    MIN_SCAN_INTERVAL,
     MODEL_NAMES,
     OPT_BRINE_CIRCUIT,
     OPT_COOLING_ENABLED,
@@ -33,6 +35,7 @@ from .const import (
     OPT_MIN_HEATING_POWER_KW,
     OPT_PASSIVE_COOLING,
     OPT_POOL_ENABLED,
+    OPT_SCAN_INTERVAL,
     OPT_SECOND_HEATING_CIRCUIT,
     HeatPumpModel,
     get_model_capabilities,
@@ -60,9 +63,9 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         ),
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): str,
         vol.Required(CONF_MODEL, default=HeatPumpModel.LA1422C): vol.In(MODEL_OPTIONS),
-        vol.Required(
-            CONF_SOFTWARE_VERSION, default=int(SoftwareVersion.L_M)
-        ): vol.In(SOFTWARE_VERSION_OPTIONS),
+        vol.Required(CONF_SOFTWARE_VERSION, default=int(SoftwareVersion.L_M)): vol.In(
+            SOFTWARE_VERSION_OPTIONS
+        ),
         vol.Optional(CONF_SLAVE_ID, default=DEFAULT_SLAVE_ID): vol.All(
             vol.Coerce(int), vol.Range(min=0, max=247)
         ),
@@ -171,16 +174,26 @@ class DimplexOptionsFlowHandler(config_entries.OptionsFlow):
 
     _model: str | None = None
     _software_version: int | None = None
+    _scan_interval: int | None = None
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """First step: Model + software version."""
+        """First step: Model, software version and polling interval."""
         if user_input is not None:
             # Stash for the next step; do not persist until features are confirmed.
             self._model = user_input[CONF_MODEL]
             self._software_version = user_input[CONF_SOFTWARE_VERSION]
+            self._scan_interval = int(
+                user_input.get(OPT_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+            )
             return await self.async_step_features()
+
+        current_interval = (
+            self._scan_interval
+            if self._scan_interval is not None
+            else self.config_entry.options.get(OPT_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        )
 
         # Prefer in-progress selection (back-button), then options override, then entry data.
         current_model = (
@@ -206,9 +219,13 @@ class DimplexOptionsFlowHandler(config_entries.OptionsFlow):
                     vol.Required(CONF_MODEL, default=current_model): vol.In(
                         MODEL_OPTIONS
                     ),
-                    vol.Required(
-                        CONF_SOFTWARE_VERSION, default=current_sw
-                    ): vol.In(SOFTWARE_VERSION_OPTIONS),
+                    vol.Required(CONF_SOFTWARE_VERSION, default=current_sw): vol.In(
+                        SOFTWARE_VERSION_OPTIONS
+                    ),
+                    vol.Optional(OPT_SCAN_INTERVAL, default=current_interval): vol.All(
+                        vol.Coerce(int),
+                        vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
+                    ),
                 }
             ),
         )
@@ -223,6 +240,8 @@ class DimplexOptionsFlowHandler(config_entries.OptionsFlow):
                 options[CONF_MODEL] = self._model
             if self._software_version is not None:
                 options[CONF_SOFTWARE_VERSION] = self._software_version
+            if self._scan_interval is not None:
+                options[OPT_SCAN_INTERVAL] = self._scan_interval
             return self.async_create_entry(title="", data=options)
 
         # Model in scope: prefer just-picked value, else entry data.
@@ -299,7 +318,9 @@ class DimplexOptionsFlowHandler(config_entries.OptionsFlow):
         schema_dict[
             vol.Optional(
                 OPT_DEFROST,
-                default=current_options.get(OPT_DEFROST, capabilities.get("defrost", True)),
+                default=current_options.get(
+                    OPT_DEFROST, capabilities.get("defrost", True)
+                ),
             )
         ] = bool
 
@@ -356,4 +377,3 @@ class DimplexOptionsFlowHandler(config_entries.OptionsFlow):
 
 class CannotConnect(HomeAssistantError):
     """Error to indicate we cannot connect."""
-

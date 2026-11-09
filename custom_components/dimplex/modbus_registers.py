@@ -1,4 +1,5 @@
 """Modbus register definitions for Dimplex heat pump integration."""
+
 from __future__ import annotations
 
 from enum import IntEnum
@@ -49,6 +50,7 @@ class RegisterAddress:
 # Reference: https://dimplex.atlassian.net/wiki/spaces/DW/pages/3340960438/Modbus+TCP+-+Statusmeldungen
 STATUS_MESSAGES_LM: Final[dict[int, str]] = {
     0: "off",
+    1: "off",  # wiki: value 1 = "Aus" on L/M (observed on an idle LA 1422C)
     2: "heating",
     3: "pool",
     4: "hot_water",
@@ -193,12 +195,9 @@ ERROR_MESSAGES: Final[dict[int, str]] = {
 
 ERROR_TRANSLATIONS_EN: Final[dict[str, str]] = {
     "none": "No Fault",
-    "extension_n17_1_general_cooling":
-        "F1 — Extension N17.1 (General Cooling) not detected",
-    "extension_n17_2_active_cooling":
-        "F2 — Extension N17.2 (Active Cooling) not detected",
-    "extension_n17_3_passive_cooling":
-        "F3 — Extension N17.3 (Passive Cooling) not detected",
+    "extension_n17_1_general_cooling": "F1 — Extension N17.1 (General Cooling) not detected",
+    "extension_n17_2_active_cooling": "F2 — Extension N17.2 (Active Cooling) not detected",
+    "extension_n17_3_passive_cooling": "F3 — Extension N17.3 (Passive Cooling) not detected",
     "extension_n17_cooling": "F5 — Extension N17 (Cooling) not detected",
     "electronic_expansion_valve": "F6 — Electronic expansion valve not detected",
     "rth_room_modulator": "F7 — RTH room modulator not detected",
@@ -206,20 +205,15 @@ ERROR_TRANSLATIONS_EN: Final[dict[str, str]] = {
     "wpio_extension": "F10 — WPIO extension fault",
     "sensors": "F15 — Sensor fault (cause shown on WPM display)",
     "brine_pressure_monitor": "F16/F21 — Brine pressure monitor tripped",
-    "primary_circuit":
-        "F19 — Primary circuit fault (pump/fan motor protection)",
+    "primary_circuit": "F19 — Primary circuit fault (pump/fan motor protection)",
     "defrost": "F20 — Defrost could not start or finish properly",
-    "domestic_hot_water":
-        "F22 — Domestic hot water temperature below 35 °C in heat-pump mode",
-    "compressor_load":
-        "F23 — Compressor load fault (rotation, phase, undervoltage, etc.)",
+    "domestic_hot_water": "F22 — Domestic hot water temperature below 35 °C in heat-pump mode",
+    "compressor_load": "F23 — Compressor load fault (rotation, phase, undervoltage, etc.)",
     "coding": "F24 — Coding does not match heat pump type",
     "low_pressure": "F25 — Heat source delivering insufficient energy",
     "frost_protection": "F26 — Flow temperature below 7 °C (frost protection)",
-    "high_pressure":
-        "F28 — High pressure sensor / pressostat tripped",
-    "temperature_difference":
-        "F29 — Flow/return temperature difference too large or negative",
+    "high_pressure": "F28 — High pressure sensor / pressostat tripped",
+    "temperature_difference": "F29 — Flow/return temperature difference too large or negative",
     "hot_gas_thermostat": "F30 — Hot gas thermostat",
     "flow": "F31 — No flow in primary or secondary circuit",
 }
@@ -379,4 +373,3 @@ def get_error_message(value: int, software_version: SoftwareVersion) -> str:
     # Currently no per-version differences known; ERROR_MESSAGES is shared.
     del software_version  # placeholder for future per-version splits
     return ERROR_MESSAGES.get(value, f"unknown_{value}")
-

@@ -1,12 +1,12 @@
 """Tests for the Dimplex sensor platform."""
+
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from custom_components.dimplex.const import DOMAIN
 from custom_components.dimplex.modbus_registers import SoftwareVersion
@@ -23,17 +23,17 @@ async def test_sensor_setup(
     config_entry = Mock()
     config_entry.entry_id = mock_config_entry["entry_id"]
     config_entry.data = mock_config_entry["data"]
-    
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][config_entry.entry_id] = mock_dimplex_coordinator
-    
+
     entities_added = []
-    
+
     def mock_add_entities(entities):
         entities_added.extend(entities)
-    
+
     await async_setup_entry(hass, config_entry, mock_add_entities)
-    
+
     # Should create 6 sensors (status, status_code, lock, lock_code, error_code, sensor_error_code)
     # Note: sensor_error_code may not be created if not in coordinator data
     assert len(entities_added) >= 5
@@ -52,7 +52,9 @@ async def test_version_dependent_sensors_skipped_for_h(
 
     # Simulate old software version H (many extended registers are not available).
     mock_dimplex_coordinator.software_version = SoftwareVersion.H
-    mock_dimplex_coordinator.pool_enabled = True  # would otherwise skip pool_energy earlier
+    mock_dimplex_coordinator.pool_enabled = (
+        True  # would otherwise skip pool_energy earlier
+    )
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][config_entry.entry_id] = mock_dimplex_coordinator
@@ -79,15 +81,15 @@ async def test_sensor_status(
     config_entry = Mock()
     config_entry.entry_id = mock_config_entry["entry_id"]
     config_entry.data = mock_config_entry["data"]
-    
+
     from custom_components.dimplex.sensor import STATUS_SENSOR_TYPES
-    
+
     # Set device name in coordinator data
     mock_dimplex_coordinator.data["name"] = "Test Dimplex"
-    
+
     status_description = next(d for d in STATUS_SENSOR_TYPES if d.key == "status")
     sensor = DimplexSensor(mock_dimplex_coordinator, config_entry, status_description)
-    
+
     assert sensor.unique_id == f"{config_entry.entry_id}_status"
     assert sensor.name == "Status"
     # native_value returns the raw enum value, not translated
@@ -106,14 +108,16 @@ async def test_sensor_status_code(
     config_entry = Mock()
     config_entry.entry_id = mock_config_entry["entry_id"]
     config_entry.data = mock_config_entry["data"]
-    
+
     from custom_components.dimplex.sensor import STATUS_SENSOR_TYPES
-    
-    status_code_description = next(d for d in STATUS_SENSOR_TYPES if d.key == "status_code")
+
+    status_code_description = next(
+        d for d in STATUS_SENSOR_TYPES if d.key == "status_code"
+    )
     sensor = DimplexSensor(
         mock_dimplex_coordinator, config_entry, status_code_description
     )
-    
+
     assert sensor.unique_id == f"{config_entry.entry_id}_status_code"
     assert sensor.native_value == 2
     assert sensor.available is True
@@ -129,15 +133,15 @@ async def test_sensor_lock(
     config_entry = Mock()
     config_entry.entry_id = mock_config_entry["entry_id"]
     config_entry.data = mock_config_entry["data"]
-    
+
     from custom_components.dimplex.sensor import STATUS_SENSOR_TYPES
-    
+
     # Set device name in coordinator data
     mock_dimplex_coordinator.data["name"] = "Test Dimplex"
-    
+
     lock_description = next(d for d in STATUS_SENSOR_TYPES if d.key == "lock")
     sensor = DimplexSensor(mock_dimplex_coordinator, config_entry, lock_description)
-    
+
     assert sensor.unique_id == f"{config_entry.entry_id}_lock"
     assert sensor.name == "Lock Status"
     # native_value returns the raw enum value, not translated
@@ -155,15 +159,15 @@ async def test_sensor_unavailable_when_disconnected(
     config_entry = Mock()
     config_entry.entry_id = mock_config_entry["entry_id"]
     config_entry.data = mock_config_entry["data"]
-    
+
     # Set coordinator to disconnected
     mock_dimplex_coordinator.data["connected"] = False
-    
+
     from custom_components.dimplex.sensor import STATUS_SENSOR_TYPES
-    
+
     status_description = next(d for d in STATUS_SENSOR_TYPES if d.key == "status")
     sensor = DimplexSensor(mock_dimplex_coordinator, config_entry, status_description)
-    
+
     assert sensor.available is False
 
 
@@ -177,12 +181,12 @@ async def test_sensor_extra_attributes(
     config_entry = Mock()
     config_entry.entry_id = mock_config_entry["entry_id"]
     config_entry.data = mock_config_entry["data"]
-    
+
     from custom_components.dimplex.sensor import STATUS_SENSOR_TYPES
-    
+
     status_description = next(d for d in STATUS_SENSOR_TYPES if d.key == "status")
     sensor = DimplexSensor(mock_dimplex_coordinator, config_entry, status_description)
-    
+
     attributes = sensor.extra_state_attributes
     assert "code" in attributes
     assert attributes["code"] == 2
@@ -198,15 +202,55 @@ async def test_sensor_device_info(
     config_entry = Mock()
     config_entry.entry_id = mock_config_entry["entry_id"]
     config_entry.data = mock_config_entry["data"]
-    
+
     from custom_components.dimplex.sensor import STATUS_SENSOR_TYPES
-    
+
     status_description = next(d for d in STATUS_SENSOR_TYPES if d.key == "status")
     sensor = DimplexSensor(mock_dimplex_coordinator, config_entry, status_description)
-    
+
     device_info = sensor._attr_device_info
     assert device_info["identifiers"] == {(DOMAIN, config_entry.entry_id)}
     assert device_info["name"] == "Test Dimplex"
     assert device_info["manufacturer"] == "Dimplex"
-    assert device_info["model"] == "LA 1422C (Air/Water)"  # Now uses model_name from coordinator
+    assert (
+        device_info["model"] == "LA 1422C (Air/Water)"
+    )  # Now uses model_name from coordinator
 
+
+@pytest.mark.asyncio
+async def test_unfitted_probes_are_skipped(
+    hass: HomeAssistant,
+    mock_dimplex_coordinator: AsyncMock,
+    mock_config_entry: dict,
+):
+    """Probes the WPM reports as exactly 0 (not installed) get no entity."""
+    config_entry = Mock()
+    config_entry.entry_id = mock_config_entry["entry_id"]
+    config_entry.data = mock_config_entry["data"]
+
+    mock_dimplex_coordinator.software_version = SoftwareVersion.L_M
+    mock_dimplex_coordinator.data.update(
+        {
+            "flow_temperature": 29.5,
+            "outside_temperature": 0.0,  # legit 0.0 degC, must stay
+            "room_temperature": 0.0,  # no room sensor
+            "heat_source_inlet_temperature": 0.0,  # air unit without R24
+            "hc3_temperature": 0.0,
+            "room_humidity": 0.0,
+            "hc2_temperature": 41.1,
+        }
+    )
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][config_entry.entry_id] = mock_dimplex_coordinator
+
+    entities_added: list[DimplexSensor] = []
+    await async_setup_entry(
+        hass, config_entry, lambda ents: entities_added.extend(ents)
+    )
+
+    keys = {e.entity_description.key for e in entities_added}
+    assert {"flow_temperature", "outside_temperature", "hc2_temperature"} <= keys
+    assert "room_temperature" not in keys
+    assert "heat_source_inlet_temperature" not in keys
+    assert "hc3_temperature" not in keys
+    assert "room_humidity" not in keys

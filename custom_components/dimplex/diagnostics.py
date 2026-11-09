@@ -33,11 +33,10 @@ async def async_get_config_entry_diagnostics(
     if coordinator is not None:
         diag["coordinator"] = {
             "last_update_success": coordinator.last_update_success,
-            "last_exception": repr(coordinator.last_exception)
-            if coordinator.last_exception
-            else None,
+            "last_exception": (
+                repr(coordinator.last_exception) if coordinator.last_exception else None
+            ),
             "data": coordinator.data,
         }
 
     return async_redact_data(diag, _REDACT_KEYS)
-

@@ -1,4 +1,5 @@
 """Common fixtures for Dimplex tests."""
+
 from __future__ import annotations
 
 from collections.abc import Generator
@@ -18,7 +19,7 @@ from custom_components.dimplex.const import (
 
 
 @pytest.fixture
-def mock_modbus_client() -> Generator[Mock, None, None]:
+def mock_modbus_client() -> Generator[Mock]:
     """Mock the Modbus TCP client."""
     with patch(
         "custom_components.dimplex.modbus_client.AsyncModbusTcpClient"
@@ -27,22 +28,22 @@ def mock_modbus_client() -> Generator[Mock, None, None]:
         client_instance.connected = True
         client_instance.connect = AsyncMock(return_value=True)
         client_instance.close = Mock()
-        
+
         # Mock successful register reads
         mock_response = Mock()
         mock_response.isError.return_value = False
         mock_response.registers = [0]  # Default value
-        
+
         client_instance.read_holding_registers = AsyncMock(return_value=mock_response)
         client_instance.read_input_registers = AsyncMock(return_value=mock_response)
         client_instance.write_register = AsyncMock(return_value=mock_response)
-        
+
         mock_client.return_value = client_instance
         yield mock_client
 
 
 @pytest.fixture
-def mock_setup_entry() -> Generator[AsyncMock, None, None]:
+def mock_setup_entry() -> Generator[AsyncMock]:
     """Override async_setup_entry."""
     with patch(
         "custom_components.dimplex.async_setup_entry", return_value=True
@@ -97,4 +98,3 @@ async def mock_dimplex_coordinator(hass: HomeAssistant) -> AsyncMock:
     coordinator.pool_enabled = False
     coordinator.second_hc_enabled = False
     return coordinator
-

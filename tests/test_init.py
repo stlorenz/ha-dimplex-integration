@@ -1,4 +1,5 @@
 """Tests for the Dimplex integration init."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, Mock, patch
@@ -36,21 +37,25 @@ async def test_async_setup_entry(hass: HomeAssistant, mock_modbus_client):
     entry.runtime_data = None
     entry.add_update_listener = Mock(return_value=Mock())
     entry.async_on_unload = Mock()
-    
+
     with patch(
         "custom_components.dimplex.DimplexDataUpdateCoordinator"
     ) as mock_coordinator_class:
         mock_coordinator = AsyncMock()
         mock_coordinator.async_config_entry_first_refresh = AsyncMock()
         mock_coordinator_class.return_value = mock_coordinator
-        
-        with patch.object(hass.config_entries, "async_forward_entry_setups", new=AsyncMock(return_value=True)) as mock_forward:
+
+        with patch.object(
+            hass.config_entries,
+            "async_forward_entry_setups",
+            new=AsyncMock(return_value=True),
+        ) as mock_forward:
             result = await async_setup_entry(hass, entry)
-            
+
             assert result is True
             assert DOMAIN in hass.data
             assert entry.entry_id in hass.data[DOMAIN]
-            
+
             # Verify coordinator was created with correct parameters
             mock_coordinator_class.assert_called_once()
             call_kwargs = mock_coordinator_class.call_args[1]
@@ -58,10 +63,10 @@ async def test_async_setup_entry(hass: HomeAssistant, mock_modbus_client):
             assert call_kwargs["port"] == 502
             assert call_kwargs["model"] == HeatPumpModel.LA1422C
             assert "capabilities" in call_kwargs
-            
+
             # Verify coordinator refresh was called
             mock_coordinator.async_config_entry_first_refresh.assert_called_once()
-            
+
             # Verify platforms were forwarded
             mock_forward.assert_called_once()
 
@@ -72,25 +77,25 @@ async def test_async_unload_entry(hass: HomeAssistant):
     entry = Mock(spec=ConfigEntry)
     entry.entry_id = "test_entry"
     entry.runtime_data = None
-    
+
     # Setup coordinator mock
     mock_coordinator = AsyncMock()
     mock_coordinator.async_shutdown = AsyncMock()
-    
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = mock_coordinator
-    
+
     with patch.object(
         hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=True)
     ) as mock_unload:
         result = await async_unload_entry(hass, entry)
-        
+
         assert result is True
         assert entry.entry_id not in hass.data[DOMAIN]
-        
+
         # Verify coordinator shutdown was called
         mock_coordinator.async_shutdown.assert_called_once()
-        
+
         # Verify platforms were unloaded
         mock_unload.assert_called_once()
 
@@ -101,19 +106,18 @@ async def test_async_unload_entry_failure(hass: HomeAssistant):
     entry = Mock(spec=ConfigEntry)
     entry.entry_id = "test_entry"
     entry.runtime_data = None
-    
+
     mock_coordinator = AsyncMock()
     mock_coordinator.async_shutdown = AsyncMock()
-    
+
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = mock_coordinator
-    
+
     with patch.object(
         hass.config_entries, "async_unload_platforms", new=AsyncMock(return_value=False)
     ):
         result = await async_unload_entry(hass, entry)
-        
+
         assert result is False
         # Entry should still be in data if unload failed
         assert entry.entry_id in hass.data[DOMAIN]
-

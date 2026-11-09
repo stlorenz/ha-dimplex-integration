@@ -1,0 +1,267 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Dimplex einrichten",
+        "description": "Verbindungsdaten des NWPM-Touch-Moduls eingeben",
+        "data": {
+          "host": "Host oder IP-Adresse",
+          "port": "Port",
+          "name": "Gerätename",
+          "model": "Wärmepumpen-Modell",
+          "software_version": "WPM-Softwareversion",
+          "slave_id": "Modbus-Unit / Slave-ID"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zum Gerät nicht möglich",
+      "invalid_auth": "Ungültige Anmeldedaten",
+      "unknown": "Unerwarteter Fehler"
+    },
+    "abort": {
+      "already_configured": "Gerät ist bereits eingerichtet"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Modell wählen",
+        "description": "Wärmepumpen-Modell, WPM-Softwareversion und Abfrageintervall wählen. Daraus ergeben sich die Standard-Funktionen und Registeradressen, die im nächsten Schritt angepasst werden können.",
+        "data": {
+          "model": "Wärmepumpen-Modell",
+          "software_version": "WPM-Softwareversion",
+          "scan_interval": "Abfrageintervall (Sekunden)"
+        }
+      },
+      "features": {
+        "title": "Funktionen konfigurieren",
+        "description": "Installierte Funktionen für {model} festlegen. Die Modell-Vorgaben können an die eigene Anlage angepasst werden.",
+        "data": {
+          "cooling_enabled": "Kühlung installiert",
+          "dhw_enabled": "Warmwasserspeicher vorhanden",
+          "pool_enabled": "Schwimmbadkreis vorhanden",
+          "second_heating_circuit": "Zweiter Heizkreis (HK2)",
+          "passive_cooling": "Passive Kühlung möglich",
+          "defrost": "Abtaufunktion vorhanden",
+          "brine_circuit": "Solekreis vorhanden",
+          "heat_source": "Wärmequelle",
+          "max_heating_power_kw": "Maximale Heizleistung (kW)",
+          "min_heating_power_kw": "Minimale Heizleistung (kW)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "off": "Aus",
+          "heating": "Heizen",
+          "pool": "Schwimmbad",
+          "hot_water": "Warmwasser",
+          "cooling": "Kühlen",
+          "defrost": "Abtauen",
+          "flow_monitoring": "Durchflussüberwachung",
+          "delay_mode_switch": "Verzögerung Betriebsmodusumschaltung",
+          "locked": "Gesperrt",
+          "heat_pump_on_heating": "Wärmepumpe Ein – Heizen",
+          "heat_pump_on_pool": "Wärmepumpe Ein – Schwimmbad",
+          "heat_pump_on_hot_water": "Wärmepumpe Ein – Warmwasser",
+          "heat_pump_on_heating_auxiliary": "Wärmepumpe Ein – Heizen + 2. Wärmeerzeuger",
+          "heat_pump_on_pool_auxiliary": "Wärmepumpe Ein – Schwimmbad + 2. Wärmeerzeuger",
+          "heat_pump_on_hot_water_auxiliary": "Wärmepumpe Ein – Warmwasser + 2. Wärmeerzeuger",
+          "primary_pump_flow": "Primärpumpenvorlauf",
+          "heating_purge": "Heizung spülen",
+          "lower_operation_limit": "Untere Einsatzgrenze",
+          "low_pressure_limit": "Niederdruckgrenze",
+          "low_pressure_shutdown": "Niederdruckabschaltung",
+          "high_pressure_safety": "Hochdrucksicherung",
+          "anti_cycling": "Schaltspielsperre",
+          "minimum_standby": "Mindeststandzeit",
+          "load_management": "Netzbelastung",
+          "auxiliary_heater": "2. Wärmeerzeuger",
+          "low_pressure_brine": "Niederdruck Sole",
+          "heat_pump_on_defrost": "Wärmepumpe Ein – Abtauen",
+          "upper_operation_limit": "Obere Einsatzgrenze",
+          "external_lock": "Sperre extern",
+          "cooling_mode": "Betriebsmodus Kühlung",
+          "frost_protection": "Frostschutz Kälte",
+          "flow_limit": "Vorlaufgrenze",
+          "dew_point_monitor": "Taupunktwächter",
+          "dew_point": "Taupunkt",
+          "passive_cooling": "Kühlen passiv"
+        }
+      },
+      "status_code": { "name": "Statuscode" },
+      "lock": {
+        "name": "Sperrmeldung",
+        "state": {
+          "none": "Keine Sperre",
+          "flow_rate": "Volumenstrom",
+          "function_control": "Funktionskontrolle",
+          "operation_limit_auxiliary": "Einsatzgrenze 2. Wärmeerzeuger",
+          "system_control": "Systemkontrolle",
+          "delay_cooling_switch": "Verzögerung Umschaltung Kühlen",
+          "pump_prerun": "Pumpenvorlauf",
+          "minimum_standby": "Mindeststandzeit",
+          "load_management": "Netzbelastung",
+          "anti_cycling": "Schaltspielsperre",
+          "hot_water_post_heating": "Warmwasser Nacherwärmung",
+          "regenerative": "Regenerativ",
+          "utility_lock": "EVU-Sperre",
+          "soft_starter": "Sanftanlasser",
+          "flow_rate_monitoring": "Durchfluss",
+          "heat_pump_operation_limit": "Einsatzgrenze Wärmepumpe",
+          "high_pressure": "Hochdruck",
+          "low_pressure": "Niederdruck",
+          "heat_source_limit": "Einsatzgrenze Wärmequelle",
+          "system_limit": "Systemgrenze",
+          "primary_circuit_load": "Last Primärkreis",
+          "external_lock": "Sperre extern",
+          "inverter": "Inverter",
+          "warm_up": "Aufwärmen",
+          "evd_initialization": "EvD-Initialisierung",
+          "auxiliary_heater_enabled": "2. Wärmeerzeuger freigegeben",
+          "error_active": "Störung",
+          "outside_temperature": "Außentemperatur",
+          "bivalent_alternative": "Bivalent-alternativ",
+          "bivalent_regenerative": "Bivalent-regenerativ",
+          "return_temperature": "Rücklauf",
+          "hot_water": "Warmwasser"
+        }
+      },
+      "lock_code": { "name": "Sperrcode" },
+      "error_code": { "name": "Störungscode" },
+      "error": {
+        "name": "Störung",
+        "state": {
+          "none": "Keine Störung",
+          "extension_n17_1_general_cooling": "F1 – Erweiterung N17.1 (Kühlung allgemein)",
+          "extension_n17_2_active_cooling": "F2 – Erweiterung N17.2 (aktive Kühlung)",
+          "extension_n17_3_passive_cooling": "F3 – Erweiterung N17.3 (passive Kühlung)",
+          "extension_n17_cooling": "F5 – Erweiterung N17 (Kühlung)",
+          "electronic_expansion_valve": "F6 – Elektronisches Expansionsventil",
+          "rth_room_modulator": "F7 – Raumregler RTM Econ",
+          "odu_extension": "F8 – Fehler ODU",
+          "wpio_extension": "F10 – Erweiterung WPIO",
+          "sensors": "F15 – Sensorik",
+          "brine_pressure_monitor": "F16 / F21 – Niederdruck Sole",
+          "primary_circuit": "F19 – Primärkreis",
+          "defrost": "F20 – Abtauen",
+          "domestic_hot_water": "F22 – Warmwasser",
+          "compressor_load": "F23 – Last Verdichter",
+          "coding": "F24 – Codierung",
+          "low_pressure": "F25 – Niederdruck",
+          "frost_protection": "F26 – Frostschutz",
+          "high_pressure": "F28 – Hochdruck",
+          "temperature_difference": "F29 – Temperaturdifferenz",
+          "hot_gas_thermostat": "F30 – Heißgasthermostat",
+          "flow": "F31 – Durchfluss"
+        }
+      },
+      "sensor_error_code": { "name": "Sensorfehlercode" },
+      "flow_temperature": { "name": "Vorlauftemperatur" },
+      "return_temperature": { "name": "Rücklauftemperatur" },
+      "outside_temperature": { "name": "Außentemperatur" },
+      "hot_water_temperature": { "name": "Warmwassertemperatur" },
+      "heat_source_inlet_temperature": { "name": "Wärmequelleneintritt" },
+      "heat_source_outlet_temperature": { "name": "Wärmequellenaustritt" },
+      "room_temperature": { "name": "Raumtemperatur" },
+      "room_temperature_2": { "name": "Raumtemperatur 2" },
+      "room_humidity": { "name": "Raumfeuchte" },
+      "room_humidity_2": { "name": "Raumfeuchte 2" },
+      "return_setpoint": { "name": "Rücklauf-Solltemperatur" },
+      "hot_water_setpoint": { "name": "Warmwasser-Solltemperatur" },
+      "hc2_setpoint": { "name": "Solltemperatur 2. Heizkreis" },
+      "hc2_temperature": { "name": "Temperatur 2. Heizkreis" },
+      "hc3_setpoint": { "name": "Solltemperatur 3. Heizkreis" },
+      "hc3_temperature": { "name": "Temperatur 3. Heizkreis" },
+      "passive_cooling_flow_temperature": { "name": "Vorlauf passive Kühlung" },
+      "passive_cooling_return_temperature": { "name": "Rücklauf passive Kühlung" },
+      "primary_circuit_return_temperature": { "name": "Rücklauf Primärkreis" },
+      "solar_storage_temperature": { "name": "Solarspeichertemperatur" },
+      "high_pressure": { "name": "Hochdruck" },
+      "low_pressure": { "name": "Niederdruck" },
+      "current_power_consumption": { "name": "Elektrische Leistungsaufnahme" },
+      "current_heating_power": { "name": "Heizleistung" },
+      "pv_surplus": { "name": "PV-Überschuss" },
+      "total_heat_generated": { "name": "Wärmemenge gesamt" },
+      "heating_energy": { "name": "Wärmemenge Heizen" },
+      "hot_water_energy": { "name": "Wärmemenge Warmwasser" },
+      "pool_energy": { "name": "Wärmemenge Schwimmbad" },
+      "environmental_energy": { "name": "Umweltenergie" },
+      "cop": { "name": "Leistungszahl (COP)" },
+      "compressor_runtime_total": { "name": "Laufzeit Verdichter gesamt" },
+      "compressor_1_runtime": { "name": "Laufzeit Verdichter 1" },
+      "compressor_2_runtime": { "name": "Laufzeit Verdichter 2" },
+      "primary_pump_fan_runtime": { "name": "Laufzeit Primärpumpe / Ventilator" },
+      "second_heat_generator_runtime": { "name": "Laufzeit 2. Wärmeerzeuger" },
+      "heating_pump_runtime": { "name": "Laufzeit Heizungspumpe" },
+      "hot_water_pump_runtime": { "name": "Laufzeit Warmwasserpumpe" },
+      "immersion_heater_runtime": { "name": "Laufzeit Flanschheizung" },
+      "pool_pump_runtime": { "name": "Laufzeit Schwimmbadpumpe" },
+      "aux_circ_pump_runtime": { "name": "Laufzeit Zusatzumwälzpumpe" }
+    },
+    "binary_sensor": {
+      "error_active": { "name": "Störung aktiv" },
+      "lock_active": { "name": "Sperre aktiv" },
+      "heat_pump_running": { "name": "Wärmepumpe läuft" },
+      "defrost_active": { "name": "Abtauung aktiv" },
+      "evu_lock": { "name": "EVU-Sperre" },
+      "external_lock": { "name": "Sperre extern" },
+      "smart_grid_1": { "name": "Smart Grid 1" },
+      "smart_grid_2": { "name": "Smart Grid 2" },
+      "compressor_1": { "name": "Verdichter 1" },
+      "compressor_2": { "name": "Verdichter 2" },
+      "primary_pump_fan": { "name": "Primärpumpe / Ventilator" },
+      "second_heat_generator": { "name": "2. Wärmeerzeuger" },
+      "heating_pump_m13": { "name": "Heizungspumpe (M13)" },
+      "hot_water_pump": { "name": "Warmwasserpumpe (M18)" },
+      "aux_circ_pump": { "name": "Erzeugerkreispumpe (M16)" },
+      "flange_heater": { "name": "Flanschheizung (E9)" },
+      "heating_pump_m15": { "name": "Heizungspumpe HK2 (M15)" },
+      "mixer_m21_open": { "name": "Mischer HK1 auf (M21)" },
+      "mixer_m21_close": { "name": "Mischer HK1 zu (M21)" },
+      "heating_pump_m20": { "name": "Heizungspumpe (M20)" },
+      "mixer_m22_open": { "name": "Mischer HK2 auf (M22)" },
+      "mixer_m22_close": { "name": "Mischer HK2 zu (M22)" },
+      "heating_pump_m14": { "name": "Heizungspumpe (M14)" },
+      "pool_pump": { "name": "Schwimmbadpumpe (M19)" },
+      "cooling_pump": { "name": "Kühlpumpe (M17)" },
+      "primary_pump_cooling": { "name": "Primärpumpe Kühlen (M12)" },
+      "room_thermostat_cooling": { "name": "Raumthermostate auf Kühlen (N9)" },
+      "solar_pump": { "name": "Solarpumpe (M23)" },
+      "collective_fault": { "name": "Sammelstörmeldung (H5)" }
+    },
+    "switch": {
+      "write_enable": { "name": "Schreiben erlauben" }
+    },
+    "select": {
+      "operating_mode": {
+        "name": "Betriebsmodus",
+        "state": {
+          "summer": "Sommer",
+          "winter": "Winter",
+          "vacation": "Urlaub",
+          "party": "Party",
+          "second_heat_generator": "2. Wärmeerzeuger",
+          "cooling": "Kühlen"
+        }
+      }
+    },
+    "number": {
+      "hot_water_setpoint_setting": { "name": "Warmwasser-Solltemperatur" },
+      "hot_water_max_setpoint": { "name": "Warmwasser-Solltemperatur maximal" },
+      "hot_water_min_setpoint": { "name": "Warmwasser-Solltemperatur minimal" },
+      "hot_water_hysteresis": { "name": "Warmwasser-Hysterese" },
+      "hc1_parallel_shift": { "name": "HK1 Parallelverschiebung Heizkurve" },
+      "hc1_heating_curve_endpoint": { "name": "HK1 Heizkurvenendpunkt" },
+      "hc1_fixed_setpoint": { "name": "HK1 Festwert-Solltemperatur" },
+      "hc1_hysteresis": { "name": "HK1 Hysterese" },
+      "hc1_cooling_setpoint": { "name": "HK1 Solltemperatur Kühlen" },
+      "hc1_cooling_setpoint_30": { "name": "HK1 Solltemperatur Kühlen bei 30 °C AT" }
+    }
+  }
+}

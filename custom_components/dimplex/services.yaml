@@ -118,15 +118,14 @@ write_register:
           mode: box
 
 diagnose_registers:
-  name: Diagnose unverified registers
+  name: Diagnose registers
   description: >-
-    Read every Modbus register that is currently flagged "UNVERIFIED"
-    in the integration's register map and return the raw value plus
-    every plausible decode (pressure scale 0.01 vs 0.1, signed vs
-    unsigned 16-bit temperature, big-endian vs little-endian for the
-    32-bit runtime/energy counters). Run this once against a real
-    device and compare to the WPM Touch display to pin down the
-    correct register layout.
+    Read every datapoint the integration maps (holding registers and
+    coils) once and return raw words, scaled value and a verdict against
+    the range documented in the Dimplex wiki. Also reports registers 5
+    and 9 side by side (the wiki and the integration disagree on which
+    one is the flow temperature). Compare the result with the WPM Touch
+    display; anything listed under "problems" needs attention.
   fields:
     entry_id:
       name: Config entry

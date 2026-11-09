@@ -10,6 +10,12 @@ DEFAULT_NAME = "Dimplex"
 DEFAULT_PORT = 502  # Modbus TCP standard port
 DEFAULT_SLAVE_ID = 1  # Most Dimplex devices ship as Modbus unit 1
 
+# Polling
+DEFAULT_SCAN_INTERVAL = 30  # seconds
+MIN_SCAN_INTERVAL = 10
+MAX_SCAN_INTERVAL = 300
+MAX_BACKOFF_INTERVAL = 300  # seconds; reached after a few consecutive failures
+
 # Configuration keys
 CONF_HOST = "host"
 CONF_PORT = "port"
@@ -23,6 +29,7 @@ OPT_COOLING_ENABLED = "cooling_enabled"
 OPT_DHW_ENABLED = "dhw_enabled"
 OPT_POOL_ENABLED = "pool_enabled"
 OPT_SECOND_HEATING_CIRCUIT = "second_heating_circuit"
+OPT_SCAN_INTERVAL = "scan_interval"
 
 # Advanced capability options (user can override model defaults)
 # Note: CONF_MODEL can also be stored in options as an override
@@ -172,18 +179,18 @@ def get_model_capabilities(
     model: str, user_overrides: dict[str, Any] | None = None
 ) -> dict[str, bool | str | int | None]:
     """Get capabilities for a specific model, with optional user overrides.
-    
+
     Args:
         model: The heat pump model identifier
         user_overrides: Optional dictionary of user-configured capability overrides
-        
+
     Returns:
         Dictionary of capabilities for the model, merged with user overrides
     """
     base_capabilities = MODEL_CAPABILITIES.get(
         model, MODEL_CAPABILITIES[HeatPumpModel.GENERIC]
     ).copy()
-    
+
     # Merge user overrides if provided
     if user_overrides:
         # Map option keys to capability keys
@@ -195,13 +202,12 @@ def get_model_capabilities(
             OPT_MAX_HEATING_POWER_KW: "max_heating_power_kw",
             OPT_MIN_HEATING_POWER_KW: "min_heating_power_kw",
         }
-        
+
         for option_key, capability_key in option_to_capability.items():
             if option_key in user_overrides:
                 value = user_overrides[option_key]
                 # Only override if value is not None/empty
                 if value is not None and value != "":
                     base_capabilities[capability_key] = value
-    
-    return base_capabilities
 
+    return base_capabilities

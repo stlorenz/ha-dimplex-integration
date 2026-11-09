@@ -1,8 +1,9 @@
-"""Number platform for Dimplex integration (writable hot water settings)."""
+"""Number platform for Dimplex integration (writable WPM settings)."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 
 from homeassistant.components.number import (
     NumberDeviceClass,
@@ -16,8 +17,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import CONF_NAME, DOMAIN
+from .const import DOMAIN
 from .coordinator import DimplexDataUpdateCoordinator
+from .entity import build_device_info
 from .modbus_registers import SoftwareVersion
 from .modbus_registers_extended import (
     RegisterDefinition,
@@ -35,9 +37,11 @@ class DimplexNumberDescription(NumberEntityDescription):
     register: dict[SoftwareVersion, RegisterDefinition]
     data_key: str
     requires_dhw: bool = False
+    requires_cooling: bool = False
 
 
 NUMBER_DESCRIPTIONS: tuple[DimplexNumberDescription, ...] = (
+    # --- Hot water (wiki "Einstellungen Warmwasser") -----------------------
     DimplexNumberDescription(
         key="hot_water_setpoint_setting",
         translation_key="hot_water_setpoint_setting",
@@ -97,6 +101,92 @@ NUMBER_DESCRIPTIONS: tuple[DimplexNumberDescription, ...] = (
         mode=NumberMode.BOX,
         entity_category=EntityCategory.CONFIG,
     ),
+    # --- Heating circuit 1 (wiki "Einstellungen 1. Heiz-/Kuehlkreis") -----
+    DimplexNumberDescription(
+        key="hc1_parallel_shift",
+        translation_key="hc1_parallel_shift",
+        data_key="hc1_parallel_shift",
+        register=SettingsRegisters.HC1_PARALLEL_SHIFT,
+        icon="mdi:chart-bell-curve-cumulative",
+        native_unit_of_measurement="K",
+        native_min_value=-19,
+        native_max_value=19,
+        native_step=1,
+        mode=NumberMode.SLIDER,
+        entity_category=EntityCategory.CONFIG,
+    ),
+    DimplexNumberDescription(
+        key="hc1_heating_curve_endpoint",
+        translation_key="hc1_heating_curve_endpoint",
+        data_key="hc1_heating_curve_endpoint",
+        register=SettingsRegisters.HC1_HEATING_CURVE_ENDPOINT,
+        icon="mdi:chart-line",
+        device_class=NumberDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=20,
+        native_max_value=70,
+        native_step=1,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+    ),
+    DimplexNumberDescription(
+        key="hc1_fixed_setpoint",
+        translation_key="hc1_fixed_setpoint",
+        data_key="hc1_fixed_setpoint",
+        register=SettingsRegisters.HC1_FIXED_SETPOINT,
+        icon="mdi:thermometer-lines",
+        device_class=NumberDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=18,
+        native_max_value=60,
+        native_step=1,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+        entity_registry_enabled_default=False,
+    ),
+    DimplexNumberDescription(
+        key="hc1_hysteresis",
+        translation_key="hc1_hysteresis",
+        data_key="hc1_hysteresis",
+        register=SettingsRegisters.HC1_HYSTERESIS,
+        icon="mdi:delta",
+        native_unit_of_measurement="K",
+        native_min_value=0.5,
+        native_max_value=5.0,
+        native_step=0.1,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+    ),
+    DimplexNumberDescription(
+        key="hc1_cooling_setpoint",
+        translation_key="hc1_cooling_setpoint",
+        data_key="hc1_cooling_setpoint",
+        register=SettingsRegisters.HC1_COOLING_SETPOINT,
+        requires_cooling=True,
+        icon="mdi:snowflake-thermometer",
+        device_class=NumberDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=10,
+        native_max_value=35,
+        native_step=1,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+    ),
+    DimplexNumberDescription(
+        key="hc1_cooling_setpoint_30",
+        translation_key="hc1_cooling_setpoint_30",
+        data_key="hc1_cooling_setpoint_30",
+        register=SettingsRegisters.HC1_COOLING_SETPOINT_30,
+        requires_cooling=True,
+        icon="mdi:snowflake-thermometer",
+        device_class=NumberDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=10,
+        native_max_value=35,
+        native_step=1,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+    ),
 )
 
 
@@ -111,6 +201,8 @@ async def async_setup_entry(
     entities: list[DimplexNumber] = []
     for description in NUMBER_DESCRIPTIONS:
         if description.requires_dhw and not coordinator.dhw_enabled:
+            continue
+        if description.requires_cooling and not coordinator.cooling_enabled:
             continue
         reg_def = get_register_definition(
             description.register, coordinator.software_version
@@ -145,12 +237,7 @@ class DimplexNumber(CoordinatorEntity[DimplexDataUpdateCoordinator], NumberEntit
         self.entity_description = description
         self._reg_def = reg_def
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": entry.data.get(CONF_NAME, "Dimplex Heat Pump"),
-            "manufacturer": "Dimplex",
-            "model": coordinator.model_name,
-        }
+        self._attr_device_info = build_device_info(coordinator, entry)
 
     @property
     def native_value(self) -> float | None:
@@ -173,7 +260,7 @@ class DimplexNumber(CoordinatorEntity[DimplexDataUpdateCoordinator], NumberEntit
         if self._reg_def.address is None:
             return
 
-        raw_value = int(round(value / self._reg_def.scale))
+        raw_value = self._reg_def.to_raw(value)
         success = await self.coordinator.client.write_register(
             address=self._reg_def.address,
             value=raw_value,

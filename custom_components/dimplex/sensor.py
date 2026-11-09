@@ -1,4 +1,5 @@
 """Sensor platform for Dimplex integration."""
+
 # pyright: reportArgumentType=false
 # pyright: reportIncompatibleVariableOverride=false
 from __future__ import annotations
@@ -15,6 +16,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    PERCENTAGE,
     EntityCategory,
     UnitOfEnergy,
     UnitOfPower,
@@ -29,39 +31,25 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import DimplexDataUpdateCoordinator
-from .modbus_registers import SoftwareVersion
-from .modbus_registers_extended import EnergyRegisters, RuntimeRegisters, get_register_definition
+from .entity import build_device_info
 from .modbus_registers import (
     ERROR_MESSAGES,
-    LOCK_MESSAGES_LM,
-    STATUS_MESSAGES_LM,
-    STATUS_MESSAGES_HJ,
-    LOCK_MESSAGES_J,
     LOCK_MESSAGES_H,
+    LOCK_MESSAGES_J,
+    LOCK_MESSAGES_LM,
+    STATUS_MESSAGES_HJ,
+    STATUS_MESSAGES_LM,
+    SoftwareVersion,
 )
+from .modbus_registers_extended import REGISTER_DATAPOINTS, get_register_definition
 
-_VERSION_DEPENDENT_SENSOR_REGISTERS: dict[str, dict[SoftwareVersion, Any]] = {
-    # Power / energy datapoints depend on software version mappings (some are None on H).
-    "current_power_consumption": EnergyRegisters.CURRENT_POWER_CONSUMPTION,
-    "current_heating_power": EnergyRegisters.CURRENT_HEATING_POWER,
-    "pv_surplus": EnergyRegisters.PV_SURPLUS,
-    "total_energy_consumed": EnergyRegisters.TOTAL_ENERGY_CONSUMED,
-    "total_heat_generated": EnergyRegisters.TOTAL_HEAT_GENERATED,
-    "heating_energy": EnergyRegisters.HEATING_ENERGY,
-    "hot_water_energy": EnergyRegisters.HOT_WATER_ENERGY,
-    "cooling_energy": EnergyRegisters.COOLING_ENERGY,
-    "pool_energy": EnergyRegisters.POOL_ENERGY,
-    "environmental_energy": EnergyRegisters.ENVIRONMENTAL_ENERGY,
-    # Per-component runtimes are software-version dependent (J/L/M only).
-    "compressor_1_runtime": RuntimeRegisters.COMPRESSOR_1_RUNTIME,
-    "compressor_2_runtime": RuntimeRegisters.COMPRESSOR_2_RUNTIME,
-    "primary_pump_fan_runtime": RuntimeRegisters.PRIMARY_PUMP_FAN_RUNTIME,
-    "second_heat_generator_runtime": RuntimeRegisters.SECOND_HEAT_GENERATOR_RUNTIME,
-    "heating_pump_runtime": RuntimeRegisters.HEATING_PUMP_RUNTIME,
-    "hot_water_pump_runtime": RuntimeRegisters.HOT_WATER_PUMP_RUNTIME,
-    "immersion_heater_runtime": RuntimeRegisters.IMMERSION_HEATER_RUNTIME,
-    "pool_pump_runtime": RuntimeRegisters.POOL_PUMP_RUNTIME,
-    "aux_circ_pump_runtime": RuntimeRegisters.AUX_CIRC_PUMP_RUNTIME,
+# Derived datapoints and the register datapoint they depend on. A derived
+# sensor is only created when its source register exists for the software
+# version in use.
+_COMPUTED_SENSOR_SOURCES: dict[str, str] = {
+    "cop": "current_power_consumption",
+    "compressor_runtime_total": "compressor_1_runtime",
+    "total_heat_generated": "heating_energy",
 }
 
 
@@ -90,6 +78,85 @@ class DimplexSensorEntityDescription(SensorEntityDescription):
     """Describes Dimplex sensor entity."""
 
     value_fn: Callable[[dict[str, Any]], Any] | None = None
+
+
+def _value(key: str) -> Callable[[dict[str, Any]], Any]:
+    return lambda data: data.get(key)
+
+
+def _temperature(
+    key: str,
+    name: str,
+    icon: str,
+    *,
+    diagnostic: bool = False,
+    enabled_default: bool = True,
+) -> DimplexSensorEntityDescription:
+    """Describe a 0.1 degC temperature sensor."""
+    return DimplexSensorEntityDescription(
+        key=key,
+        translation_key=key,
+        name=name,
+        icon=icon,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        suggested_display_precision=1,
+        entity_category=EntityCategory.DIAGNOSTIC if diagnostic else None,
+        entity_registry_enabled_default=enabled_default,
+        value_fn=_value(key),
+    )
+
+
+def _runtime(key: str, name: str, icon: str) -> DimplexSensorEntityDescription:
+    """Describe an hours runtime counter."""
+    return DimplexSensorEntityDescription(
+        key=key,
+        translation_key=key,
+        name=name,
+        icon=icon,
+        device_class=SensorDeviceClass.DURATION,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement=UnitOfTime.HOURS,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=_value(key),
+    )
+
+
+def _energy(
+    key: str, name: str, icon: str, *, precision: int = 0
+) -> DimplexSensorEntityDescription:
+    """Describe a kWh energy counter."""
+    return DimplexSensorEntityDescription(
+        key=key,
+        translation_key=key,
+        name=name,
+        icon=icon,
+        device_class=SensorDeviceClass.ENERGY,
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        suggested_display_precision=precision,
+        value_fn=_value(key),
+    )
+
+
+def _power(
+    key: str, name: str, icon: str, *, diagnostic: bool = False
+) -> DimplexSensorEntityDescription:
+    """Describe a W power sensor."""
+    return DimplexSensorEntityDescription(
+        key=key,
+        translation_key=key,
+        name=name,
+        icon=icon,
+        device_class=SensorDeviceClass.POWER,
+        state_class=SensorStateClass.MEASUREMENT,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        suggested_display_precision=0,
+        entity_category=EntityCategory.DIAGNOSTIC if diagnostic else None,
+        value_fn=_value(key),
+    )
 
 
 # Status and diagnostic sensors (enum types)
@@ -160,226 +227,82 @@ STATUS_SENSOR_TYPES: tuple[DimplexSensorEntityDescription, ...] = (
 )
 
 
-# Temperature sensors - HA compliant for InfluxDB/Grafana
+# Temperature sensors (wiki "Betriebsdaten")
 TEMPERATURE_SENSOR_TYPES: tuple[DimplexSensorEntityDescription, ...] = (
+    _temperature("flow_temperature", "Flow Temperature", "mdi:thermometer-water"),
+    _temperature("return_temperature", "Return Temperature", "mdi:thermometer-water"),
+    _temperature("outside_temperature", "Outside Temperature", "mdi:thermometer"),
+    _temperature(
+        "hot_water_temperature", "Hot Water Temperature", "mdi:water-thermometer"
+    ),
+    _temperature(
+        "heat_source_inlet_temperature",
+        "Heat Source Inlet Temperature",
+        "mdi:thermometer-chevron-down",
+    ),
+    _temperature(
+        "heat_source_outlet_temperature",
+        "Heat Source Outlet Temperature",
+        "mdi:thermometer-chevron-up",
+    ),
+    _temperature("room_temperature", "Room Temperature", "mdi:home-thermometer"),
+    _temperature("room_temperature_2", "Room Temperature 2", "mdi:home-thermometer"),
     DimplexSensorEntityDescription(
-        key="flow_temperature",
-        translation_key="flow_temperature",
-        name="Flow Temperature",
-        icon="mdi:thermometer-water",
-        device_class=SensorDeviceClass.TEMPERATURE,
+        key="room_humidity",
+        translation_key="room_humidity",
+        name="Room Humidity",
+        icon="mdi:water-percent",
+        device_class=SensorDeviceClass.HUMIDITY,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_unit_of_measurement=PERCENTAGE,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get("flow_temperature"),
+        value_fn=_value("room_humidity"),
     ),
     DimplexSensorEntityDescription(
-        key="return_temperature",
-        translation_key="return_temperature",
-        name="Return Temperature",
-        icon="mdi:thermometer-water",
-        device_class=SensorDeviceClass.TEMPERATURE,
+        key="room_humidity_2",
+        translation_key="room_humidity_2",
+        name="Room Humidity 2",
+        icon="mdi:water-percent",
+        device_class=SensorDeviceClass.HUMIDITY,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_unit_of_measurement=PERCENTAGE,
         suggested_display_precision=1,
-        value_fn=lambda data: data.get("return_temperature"),
+        value_fn=_value("room_humidity_2"),
     ),
-    DimplexSensorEntityDescription(
-        key="outside_temperature",
-        translation_key="outside_temperature",
-        name="Outside Temperature",
-        icon="mdi:thermometer",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("outside_temperature"),
+    _temperature("return_setpoint", "Return Setpoint", "mdi:thermometer-lines"),
+    _temperature(
+        "hot_water_setpoint", "Hot Water Setpoint", "mdi:water-thermometer-outline"
     ),
-    DimplexSensorEntityDescription(
-        key="hot_water_temperature",
-        translation_key="hot_water_temperature",
-        name="Hot Water Temperature",
-        icon="mdi:water-thermometer",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("hot_water_temperature"),
+    _temperature("hc2_setpoint", "HC2 Setpoint", "mdi:thermostat"),
+    _temperature("hc2_temperature", "HC2 Temperature", "mdi:radiator"),
+    _temperature("hc3_setpoint", "HC3 Setpoint", "mdi:thermostat"),
+    _temperature("hc3_temperature", "HC3 Temperature", "mdi:radiator"),
+    _temperature(
+        "passive_cooling_flow_temperature",
+        "Passive Cooling Flow Temperature",
+        "mdi:snowflake-thermometer",
     ),
-    DimplexSensorEntityDescription(
-        key="heat_source_inlet_temperature",
-        translation_key="heat_source_inlet_temperature",
-        name="Heat Source Inlet Temperature",
-        icon="mdi:thermometer-chevron-down",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("heat_source_inlet_temperature"),
+    _temperature(
+        "passive_cooling_return_temperature",
+        "Passive Cooling Return Temperature",
+        "mdi:snowflake-thermometer",
     ),
-    DimplexSensorEntityDescription(
-        key="heat_source_outlet_temperature",
-        translation_key="heat_source_outlet_temperature",
-        name="Heat Source Outlet Temperature",
-        icon="mdi:thermometer-chevron-up",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("heat_source_outlet_temperature"),
+    _temperature(
+        "primary_circuit_return_temperature",
+        "Primary Circuit Return Temperature",
+        "mdi:thermometer-water",
+        diagnostic=True,
     ),
-    DimplexSensorEntityDescription(
-        key="room_temperature",
-        translation_key="room_temperature",
-        name="Room Temperature",
-        icon="mdi:home-thermometer",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("room_temperature"),
-    ),
-    DimplexSensorEntityDescription(
-        key="room_temperature_2",
-        translation_key="room_temperature_2",
-        name="Room Temperature 2",
-        icon="mdi:home-thermometer",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("room_temperature_2"),
-    ),
-    DimplexSensorEntityDescription(
-        key="flow_setpoint",
-        translation_key="flow_setpoint",
-        name="Flow Setpoint",
-        icon="mdi:thermometer-lines",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("flow_setpoint"),
-    ),
-    DimplexSensorEntityDescription(
-        key="return_setpoint",
-        translation_key="return_setpoint",
-        name="Return Setpoint",
-        icon="mdi:thermometer-lines",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("return_setpoint"),
-    ),
-    DimplexSensorEntityDescription(
-        key="hot_water_setpoint",
-        translation_key="hot_water_setpoint",
-        name="Hot Water Setpoint",
-        icon="mdi:water-thermometer-outline",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("hot_water_setpoint"),
-    ),
-    DimplexSensorEntityDescription(
-        key="hc2_setpoint",
-        translation_key="hc2_setpoint",
-        name="HC2 Setpoint",
-        icon="mdi:thermostat",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("hc2_setpoint"),
-    ),
-    DimplexSensorEntityDescription(
-        key="hc2_temperature",
-        translation_key="hc2_temperature",
-        name="HC2 Temperature",
-        icon="mdi:radiator",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("hc2_temperature"),
-    ),
-    DimplexSensorEntityDescription(
-        key="hc3_setpoint",
-        translation_key="hc3_setpoint",
-        name="HC3 Setpoint",
-        icon="mdi:thermostat",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("hc3_setpoint"),
-    ),
-    DimplexSensorEntityDescription(
-        key="hc3_temperature",
-        translation_key="hc3_temperature",
-        name="HC3 Temperature",
-        icon="mdi:radiator",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("hc3_temperature"),
-    ),
-    DimplexSensorEntityDescription(
-        key="evaporator_temperature",
-        translation_key="evaporator_temperature",
-        name="Evaporator Temperature",
-        icon="mdi:snowflake-thermometer",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("evaporator_temperature"),
-    ),
-    DimplexSensorEntityDescription(
-        key="condenser_temperature",
-        translation_key="condenser_temperature",
-        name="Condenser Temperature",
-        icon="mdi:radiator",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("condenser_temperature"),
-    ),
-    DimplexSensorEntityDescription(
-        key="suction_gas_temperature",
-        translation_key="suction_gas_temperature",
-        name="Suction Gas Temperature",
-        icon="mdi:gas-cylinder",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("suction_gas_temperature"),
-    ),
-    DimplexSensorEntityDescription(
-        key="discharge_gas_temperature",
-        translation_key="discharge_gas_temperature",
-        name="Discharge Gas Temperature",
-        icon="mdi:gas-cylinder",
-        device_class=SensorDeviceClass.TEMPERATURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
-        suggested_display_precision=1,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("discharge_gas_temperature"),
+    _temperature(
+        "solar_storage_temperature",
+        "Solar Storage Temperature",
+        "mdi:solar-power-variant",
+        enabled_default=False,
     ),
 )
 
 
-# Pressure sensors - HA compliant for InfluxDB/Grafana
-# Using bar as unit (standard in HVAC) - HA will convert as needed
+# Pressure sensors (EMPIRICAL registers 8 / 101, 0.1 bar)
 PRESSURE_SENSOR_TYPES: tuple[DimplexSensorEntityDescription, ...] = (
     DimplexSensorEntityDescription(
         key="high_pressure",
@@ -389,8 +312,8 @@ PRESSURE_SENSOR_TYPES: tuple[DimplexSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPressure.BAR,
-        suggested_display_precision=2,
-        value_fn=lambda data: data.get("high_pressure"),
+        suggested_display_precision=1,
+        value_fn=_value("high_pressure"),
     ),
     DimplexSensorEntityDescription(
         key="low_pressure",
@@ -400,147 +323,22 @@ PRESSURE_SENSOR_TYPES: tuple[DimplexSensorEntityDescription, ...] = (
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPressure.BAR,
-        suggested_display_precision=2,
-        value_fn=lambda data: data.get("low_pressure"),
-    ),
-    DimplexSensorEntityDescription(
-        key="brine_pressure",
-        translation_key="brine_pressure",
-        name="Brine Pressure",
-        icon="mdi:gauge",
-        device_class=SensorDeviceClass.PRESSURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfPressure.BAR,
-        suggested_display_precision=2,
-        value_fn=lambda data: data.get("brine_pressure"),
-    ),
-    DimplexSensorEntityDescription(
-        key="water_pressure",
-        translation_key="water_pressure",
-        name="Water Pressure",
-        icon="mdi:gauge",
-        device_class=SensorDeviceClass.PRESSURE,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfPressure.BAR,
-        suggested_display_precision=2,
-        value_fn=lambda data: data.get("water_pressure"),
+        suggested_display_precision=1,
+        value_fn=_value("low_pressure"),
     ),
 )
 
 
-# Power and energy sensors - HA compliant for InfluxDB/Grafana
+# Power and energy sensors
 POWER_ENERGY_SENSOR_TYPES: tuple[DimplexSensorEntityDescription, ...] = (
-    DimplexSensorEntityDescription(
-        key="current_power_consumption",
-        translation_key="current_power_consumption",
-        name="Current Power Consumption",
-        icon="mdi:flash",
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfPower.WATT,
-        suggested_display_precision=0,
-        value_fn=lambda data: data.get("current_power_consumption"),
-    ),
-    DimplexSensorEntityDescription(
-        key="current_heating_power",
-        translation_key="current_heating_power",
-        name="Current Heating Power",
-        icon="mdi:fire",
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfPower.WATT,
-        suggested_display_precision=0,
-        value_fn=lambda data: data.get("current_heating_power"),
-    ),
-    DimplexSensorEntityDescription(
-        key="pv_surplus",
-        translation_key="pv_surplus",
-        name="PV Surplus",
-        icon="mdi:solar-power",
-        device_class=SensorDeviceClass.POWER,
-        state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfPower.WATT,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("pv_surplus"),
-    ),
-    DimplexSensorEntityDescription(
-        key="total_energy_consumed",
-        translation_key="total_energy_consumed",
-        name="Total Energy Consumed",
-        icon="mdi:lightning-bolt",
-        device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("total_energy_consumed"),
-    ),
-    DimplexSensorEntityDescription(
-        key="total_heat_generated",
-        translation_key="total_heat_generated",
-        name="Total Heat Generated",
-        icon="mdi:fire-circle",
-        device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("total_heat_generated"),
-    ),
-    DimplexSensorEntityDescription(
-        key="heating_energy",
-        translation_key="heating_energy",
-        name="Heating Energy",
-        icon="mdi:radiator",
-        device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("heating_energy"),
-    ),
-    DimplexSensorEntityDescription(
-        key="hot_water_energy",
-        translation_key="hot_water_energy",
-        name="Hot Water Energy",
-        icon="mdi:water-boiler",
-        device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("hot_water_energy"),
-    ),
-    DimplexSensorEntityDescription(
-        key="cooling_energy",
-        translation_key="cooling_energy",
-        name="Cooling Energy",
-        icon="mdi:snowflake",
-        device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        suggested_display_precision=1,
-        value_fn=lambda data: data.get("cooling_energy"),
-    ),
-    DimplexSensorEntityDescription(
-        key="pool_energy",
-        translation_key="pool_energy",
-        name="Pool Energy",
-        icon="mdi:pool",
-        device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        suggested_display_precision=0,
-        value_fn=lambda data: data.get("pool_energy"),
-    ),
-    DimplexSensorEntityDescription(
-        key="environmental_energy",
-        translation_key="environmental_energy",
-        name="Environmental Energy",
-        icon="mdi:leaf",
-        device_class=SensorDeviceClass.ENERGY,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        suggested_display_precision=0,
-        value_fn=lambda data: data.get("environmental_energy"),
-    ),
+    _power("current_power_consumption", "Current Power Consumption", "mdi:flash"),
+    _power("current_heating_power", "Current Heating Power", "mdi:fire"),
+    _power("pv_surplus", "PV Surplus", "mdi:solar-power", diagnostic=True),
+    _energy("total_heat_generated", "Total Heat Generated", "mdi:fire-circle"),
+    _energy("heating_energy", "Heating Energy", "mdi:radiator"),
+    _energy("hot_water_energy", "Hot Water Energy", "mdi:water-boiler"),
+    _energy("pool_energy", "Pool Energy", "mdi:pool"),
+    _energy("environmental_energy", "Environmental Energy", "mdi:leaf"),
     DimplexSensorEntityDescription(
         key="cop",
         translation_key="cop",
@@ -548,199 +346,25 @@ POWER_ENERGY_SENSOR_TYPES: tuple[DimplexSensorEntityDescription, ...] = (
         icon="mdi:chart-line",
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
-        value_fn=lambda data: data.get("cop"),
+        value_fn=_value("cop"),
     ),
 )
 
 
-# Runtime and counter sensors - HA compliant for InfluxDB/Grafana
+# Runtime counters (wiki "Laufzeiten")
 RUNTIME_SENSOR_TYPES: tuple[DimplexSensorEntityDescription, ...] = (
-    DimplexSensorEntityDescription(
-        key="compressor_runtime_total",
-        translation_key="compressor_runtime_total",
-        name="Compressor Runtime Total",
-        icon="mdi:timer",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("compressor_runtime_total"),
+    _runtime("compressor_runtime_total", "Compressor Runtime Total", "mdi:timer"),
+    _runtime("compressor_1_runtime", "Compressor 1 Runtime", "mdi:timer-outline"),
+    _runtime("compressor_2_runtime", "Compressor 2 Runtime", "mdi:timer-outline"),
+    _runtime("primary_pump_fan_runtime", "Primary Pump / Fan Runtime", "mdi:fan"),
+    _runtime(
+        "second_heat_generator_runtime", "Second Heat Generator Runtime", "mdi:fire"
     ),
-    DimplexSensorEntityDescription(
-        key="compressor_starts",
-        translation_key="compressor_starts",
-        name="Compressor Starts",
-        icon="mdi:counter",
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("compressor_starts"),
-    ),
-    DimplexSensorEntityDescription(
-        key="heating_runtime",
-        translation_key="heating_runtime",
-        name="Heating Runtime",
-        icon="mdi:timer-outline",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("heating_runtime"),
-    ),
-    DimplexSensorEntityDescription(
-        key="hot_water_runtime",
-        translation_key="hot_water_runtime",
-        name="Hot Water Runtime",
-        icon="mdi:timer-outline",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("hot_water_runtime"),
-    ),
-    DimplexSensorEntityDescription(
-        key="cooling_runtime",
-        translation_key="cooling_runtime",
-        name="Cooling Runtime",
-        icon="mdi:timer-outline",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("cooling_runtime"),
-    ),
-    DimplexSensorEntityDescription(
-        key="auxiliary_heater_runtime",
-        translation_key="auxiliary_heater_runtime",
-        name="Auxiliary Heater Runtime",
-        icon="mdi:timer-alert-outline",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("auxiliary_heater_runtime"),
-    ),
-    DimplexSensorEntityDescription(
-        key="defrost_cycles",
-        translation_key="defrost_cycles",
-        name="Defrost Cycles",
-        icon="mdi:counter",
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("defrost_cycles"),
-    ),
-    DimplexSensorEntityDescription(
-        key="compressor_1_runtime",
-        translation_key="compressor_1_runtime",
-        name="Compressor 1 Runtime",
-        icon="mdi:timer-outline",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("compressor_1_runtime"),
-    ),
-    DimplexSensorEntityDescription(
-        key="compressor_2_runtime",
-        translation_key="compressor_2_runtime",
-        name="Compressor 2 Runtime",
-        icon="mdi:timer-outline",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("compressor_2_runtime"),
-    ),
-    DimplexSensorEntityDescription(
-        key="primary_pump_fan_runtime",
-        translation_key="primary_pump_fan_runtime",
-        name="Primary Pump / Fan Runtime",
-        icon="mdi:fan",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("primary_pump_fan_runtime"),
-    ),
-    DimplexSensorEntityDescription(
-        key="second_heat_generator_runtime",
-        translation_key="second_heat_generator_runtime",
-        name="Second Heat Generator Runtime",
-        icon="mdi:fire",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("second_heat_generator_runtime"),
-    ),
-    DimplexSensorEntityDescription(
-        key="heating_pump_runtime",
-        translation_key="heating_pump_runtime",
-        name="Heating Pump Runtime",
-        icon="mdi:pump",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("heating_pump_runtime"),
-    ),
-    DimplexSensorEntityDescription(
-        key="hot_water_pump_runtime",
-        translation_key="hot_water_pump_runtime",
-        name="Hot Water Pump Runtime",
-        icon="mdi:pump",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("hot_water_pump_runtime"),
-    ),
-    DimplexSensorEntityDescription(
-        key="immersion_heater_runtime",
-        translation_key="immersion_heater_runtime",
-        name="Immersion Heater Runtime",
-        icon="mdi:radiator",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("immersion_heater_runtime"),
-    ),
-    DimplexSensorEntityDescription(
-        key="pool_pump_runtime",
-        translation_key="pool_pump_runtime",
-        name="Pool Pump Runtime",
-        icon="mdi:pool",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("pool_pump_runtime"),
-    ),
-    DimplexSensorEntityDescription(
-        key="aux_circ_pump_runtime",
-        translation_key="aux_circ_pump_runtime",
-        name="Auxiliary Circulation Pump Runtime",
-        icon="mdi:pump",
-        device_class=SensorDeviceClass.DURATION,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfTime.HOURS,
-        suggested_display_precision=0,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda data: data.get("aux_circ_pump_runtime"),
-    ),
+    _runtime("heating_pump_runtime", "Heating Pump Runtime", "mdi:pump"),
+    _runtime("hot_water_pump_runtime", "Hot Water Pump Runtime", "mdi:pump"),
+    _runtime("immersion_heater_runtime", "Immersion Heater Runtime", "mdi:radiator"),
+    _runtime("pool_pump_runtime", "Pool Pump Runtime", "mdi:pool"),
+    _runtime("aux_circ_pump_runtime", "Auxiliary Circulation Pump Runtime", "mdi:pump"),
 )
 
 
@@ -753,6 +377,43 @@ ALL_SENSOR_TYPES: tuple[DimplexSensorEntityDescription, ...] = (
     + RUNTIME_SENSOR_TYPES
 )
 
+# Sensors that only make sense when a feature is installed.
+_COOLING_KEYS = {
+    "passive_cooling_flow_temperature",
+    "passive_cooling_return_temperature",
+}
+_POOL_KEYS = {"pool_energy", "pool_pump_runtime"}
+
+# Optional probes: the WPM reports exactly 0 for sensors that are not fitted
+# (observed on an LA 1422C: heat source in/out, HC3, room sensors, humidity,
+# passive cooling, solar, primary circuit return all read 0). A real reading
+# of exactly 0.0 on these is practically impossible, so an entity is only
+# created when the first poll delivered a non-zero value.
+_OPTIONAL_PROBE_KEYS = {
+    "heat_source_inlet_temperature",
+    "heat_source_outlet_temperature",
+    "hc3_temperature",
+    "room_temperature",
+    "room_temperature_2",
+    "room_humidity",
+    "room_humidity_2",
+    "passive_cooling_flow_temperature",
+    "passive_cooling_return_temperature",
+    "primary_circuit_return_temperature",
+    "solar_storage_temperature",
+}
+
+
+def _supported_by_version(key: str, sw_version: Any) -> bool:
+    """Return False when the datapoint can never exist for this software version."""
+    if not isinstance(sw_version, SoftwareVersion):
+        return True
+    source_key = _COMPUTED_SENSOR_SOURCES.get(key, key)
+    register_dict = REGISTER_DATAPOINTS.get(source_key)
+    if register_dict is None:
+        return True
+    return get_register_definition(register_dict, sw_version) is not None
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -761,38 +422,31 @@ async def async_setup_entry(
 ) -> None:
     """Set up Dimplex sensor platform."""
     coordinator: DimplexDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
+    sw_version = getattr(coordinator, "software_version", None)
 
     entities = []
     for description in ALL_SENSOR_TYPES:
+        key = description.key
+
         # Skip sensors that have no data available
-        if description.key == "sensor_error_code" and "sensor_error_code" not in coordinator.data:
+        if key == "sensor_error_code" and "sensor_error_code" not in coordinator.data:
             continue
 
         # Skip sensors that are not supported by the current software version
         # (prevents always-unavailable entities for version-specific registers).
-        sw_version = getattr(coordinator, "software_version", None)
-        register_dict = _VERSION_DEPENDENT_SENSOR_REGISTERS.get(description.key)
-        if (
-            register_dict is not None
-            and isinstance(sw_version, SoftwareVersion)
-            and get_register_definition(register_dict, sw_version) is None
-        ):
+        if not _supported_by_version(key, sw_version):
             continue
 
-        # Skip cooling-related sensors if cooling is not enabled
-        if description.key in ("cooling_energy", "cooling_runtime") and not coordinator.cooling_enabled:
+        # Skip passive cooling temperatures unless passive cooling is available
+        if key in _COOLING_KEYS and not coordinator.passive_cooling_enabled:
             continue
 
         # Skip pool-related sensors if pool is not enabled
-        if description.key == "pool_energy" and not coordinator.pool_enabled:
+        if key in _POOL_KEYS and not coordinator.pool_enabled:
             continue
 
-        # Skip brine pressure if not a brine system
-        if description.key == "brine_pressure" and coordinator.heat_source != "brine":
-            continue
-
-        # Skip defrost cycles if no defrost capability
-        if description.key == "defrost_cycles" and not coordinator.has_defrost:
+        # Skip probes that are not fitted (WPM reports a constant 0)
+        if key in _OPTIONAL_PROBE_KEYS and not (coordinator.data or {}).get(key):
             continue
 
         entities.append(DimplexSensor(coordinator, entry, description))
@@ -817,12 +471,7 @@ class DimplexSensor(CoordinatorEntity[DimplexDataUpdateCoordinator], SensorEntit
         self.entity_description = description
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": entry.data.get("name", "Dimplex Heat Pump"),
-            "manufacturer": "Dimplex",
-            "model": coordinator.model_name,
-        }
+        self._attr_device_info = build_device_info(coordinator, entry)
         # Use Home Assistant's naming model: entity name is the "suffix" and the
         # device name is provided via device_info (since _attr_has_entity_name=True).
         desc_name = self._description.name
@@ -882,9 +531,7 @@ class DimplexSensor(CoordinatorEntity[DimplexDataUpdateCoordinator], SensorEntit
         self._attr_native_value = value
 
         # Availability rules (mirrors previous logic)
-        if desc.device_class == SensorDeviceClass.ENUM:
-            self._attr_available = True
-        elif desc.key in (
+        if desc.device_class == SensorDeviceClass.ENUM or desc.key in (
             "status_code",
             "lock_code",
             "error_code",

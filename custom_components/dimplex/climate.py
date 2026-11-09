@@ -1,4 +1,5 @@
-"""Climate platform for Dimplex integration."""
+"""Climate platform for Dimplex integration (heating circuit 1)."""
+
 from __future__ import annotations
 
 import logging
@@ -7,6 +8,7 @@ from typing import Any
 from homeassistant.components.climate import (
     ClimateEntity,
     ClimateEntityFeature,
+    HVACAction,
     HVACMode,
 )
 from homeassistant.config_entries import ConfigEntry
@@ -17,6 +19,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import CONF_NAME, DOMAIN
 from .coordinator import DimplexDataUpdateCoordinator
+from .entity import build_device_info
 from .modbus_registers_extended import (
     OperatingMode,
     OperatingModeRegisters,
@@ -26,8 +29,37 @@ from .modbus_registers_extended import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# Per-entry deduplication of register-not-configured warnings.
-_REGISTER_WARNINGS_LOGGED: set[str] = set()
+# Status messages that mean the compressor is producing heat for the house.
+_HEATING_STATES = (
+    "heating",
+    "heat_pump_on_heating",
+    "heat_pump_on_heating_auxiliary",
+    "defrost",
+    "heat_pump_on_defrost",
+)
+_DHW_STATES = (
+    "hot_water",
+    "heat_pump_on_hot_water",
+    "heat_pump_on_hot_water_auxiliary",
+)
+_POOL_STATES = ("pool", "heat_pump_on_pool", "heat_pump_on_pool_auxiliary")
+_COOLING_STATES = ("cooling", "passive_cooling", "cooling_mode")
+
+# Betriebsmodus (5015) <-> HA HVAC mode. "Sommer" switches space heating off
+# while domestic hot water stays active, which is the closest match to OFF.
+_MODE_TO_HVAC: dict[str, HVACMode] = {
+    "summer": HVACMode.OFF,
+    "winter": HVACMode.HEAT,
+    "vacation": HVACMode.HEAT,
+    "party": HVACMode.HEAT,
+    "second_heat_generator": HVACMode.HEAT,
+    "cooling": HVACMode.COOL,
+}
+_HVAC_TO_MODE_VALUE: dict[HVACMode, int] = {
+    HVACMode.OFF: int(OperatingMode.SUMMER),
+    HVACMode.HEAT: int(OperatingMode.WINTER),
+    HVACMode.COOL: int(OperatingMode.COOLING),
+}
 
 
 async def async_setup_entry(
@@ -41,17 +73,23 @@ async def async_setup_entry(
 
 
 class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEntity):
-    """Representation of a Dimplex climate device.
-    
-    Note: This climate entity is currently READ-ONLY for monitoring purposes.
-    Temperature and HVAC mode control require Modbus register addresses to be
-    configured in modbus_registers_extended.py. Until then, only status display
-    is functional.
+    """Heating circuit 1 of a Dimplex heat pump.
+
+    * Target temperature: register 46 "Raumtemperatur" (15.0..30.0 degC in
+      0.1 degC steps, wiki "Einstellungen 1. Heiz-/Kuehlkreis"). On systems
+      without a room sensor the WPM uses it as the room setpoint for the
+      heating curve.
+    * HVAC mode: register 5015 "Betriebsmodus" (Sommer/Winter/.../Kuehlen).
+    * Current temperature: room temperature 1 if a room sensor is present,
+      otherwise the return temperature.
+
+    Both control registers are only present on WPM software J/L/M; on H the
+    entity is display-only.
     """
 
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_target_temperature_step = 0.5
-    _attr_min_temp = 10.0
+    _attr_min_temp = 15.0
     _attr_max_temp = 30.0
     _enable_turn_on_off_backwards_compat = False
 
@@ -65,163 +103,108 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
         self._entry = entry
         self._attr_unique_id = f"{entry.entry_id}_climate"
         self._attr_name = entry.data.get(CONF_NAME, "Dimplex Climate")
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": entry.data.get(CONF_NAME, "Dimplex Heat Pump"),
-            "manufacturer": "Dimplex",
-            "model": coordinator.model_name,
-        }
-        
-        # Log warning about unconfigured registers (once per config entry)
-        if entry.entry_id not in _REGISTER_WARNINGS_LOGGED:
-            if not self._has_temperature_register():
-                _LOGGER.warning(
-                    "Temperature setpoint register not configured for software version %s. "
-                    "Temperature control will be disabled. See modbus_registers_extended.py",
-                    coordinator.software_version,
-                )
-            if not self._has_mode_register():
-                _LOGGER.warning(
-                    "Operating mode register not configured for software version %s. "
-                    "HVAC mode control will be disabled. See modbus_registers_extended.py",
-                    coordinator.software_version,
-                )
-            _REGISTER_WARNINGS_LOGGED.add(entry.entry_id)
+        self._attr_device_info = build_device_info(coordinator, entry)
 
+        if not self._has_temperature_register() or not self._has_mode_register():
+            _LOGGER.info(
+                "Climate control registers are not available for WPM software %s; "
+                "the climate entity is display-only",
+                coordinator.software_version,
+            )
+
+    # ------------------------------------------------------------------ helpers
+    def _has_temperature_register(self) -> bool:
+        return self._get_temperature_register() is not None
+
+    def _has_mode_register(self) -> bool:
+        return self._get_mode_register() is not None
+
+    def _get_temperature_register(self) -> int | None:
+        reg_def = get_register_definition(
+            SettingsRegisters.HC1_ROOM_SETPOINT, self.coordinator.software_version
+        )
+        return reg_def.address if reg_def else None
+
+    def _get_mode_register(self) -> int | None:
+        return OperatingModeRegisters.CURRENT_MODE.get(
+            self.coordinator.software_version
+        )
+
+    # --------------------------------------------------------------- properties
     @property
     def supported_features(self) -> ClimateEntityFeature:
-        """Return supported features based on configured registers.
-        
-        Only enable control features if the corresponding Modbus registers
-        are actually configured. This prevents the UI from showing controls
-        that don't work.
-        """
+        """Only advertise control features whose registers exist."""
         features = ClimateEntityFeature(0)
-        
-        # Only enable temperature control if register is configured
         if self._has_temperature_register():
             features |= ClimateEntityFeature.TARGET_TEMPERATURE
-
-        # NOTE:
-        # `OperatingModeRegisters.CURRENT_MODE` (register 5015, "Betriebsmodus")
-        # does not provide a true "OFF" state. Therefore we intentionally do NOT
-        # advertise TURN_ON/TURN_OFF support here; the integration only supports
-        # switching between operational modes (e.g. Winter/Kühlen) when available.
+        if self._has_mode_register():
+            features |= ClimateEntityFeature.TURN_ON | ClimateEntityFeature.TURN_OFF
         return features
 
     @property
     def hvac_modes(self) -> list[HVACMode]:
-        """Return the list of available HVAC modes based on device capabilities.
-        
-        Only shows controllable modes if the mode register is configured.
-
-        Important: The device register used for mode control (Betriebsmodus) has
-        no explicit "Off" mode. To avoid misleading users, we only include OFF
-        as a *display* option when the device is currently off, but we don't
-        offer OFF as a selectable target when the device is running.
-        """
-        # If mode register isn't configured, we can only show what we observe
-        # but can't actually control it
+        """Return the selectable HVAC modes."""
         if not self._has_mode_register():
-            # Return current mode only - no control available
-            current = self.hvac_mode
-            return [current] if current else [HVACMode.OFF]
+            # Display-only: show what we observe, nothing selectable.
+            return [self.hvac_mode]
 
-        modes: list[HVACMode] = [HVACMode.HEAT]
-        
-        # Only add cooling mode if it's enabled in this installation
+        modes = [HVACMode.OFF, HVACMode.HEAT]
         if self.coordinator.cooling_enabled:
             modes.append(HVACMode.COOL)
-
-        # Include OFF only if it's the currently observed mode (display-only).
-        if self.hvac_mode == HVACMode.OFF:
-            modes.insert(0, HVACMode.OFF)
-        
         return modes
-    
-    def _has_temperature_register(self) -> bool:
-        """Check if temperature setpoint register is configured."""
-        reg_def = get_register_definition(
-            SettingsRegisters.HC1_COMFORT_SETPOINT,
-            self.coordinator.software_version
-        )
-        return reg_def is not None and reg_def.address is not None
-    
-    def _has_mode_register(self) -> bool:
-        """Check if operating mode register is configured."""
-        mode_addr = OperatingModeRegisters.CURRENT_MODE.get(
-            self.coordinator.software_version
-        )
-        return mode_addr is not None
 
     @property
     def current_temperature(self) -> float | None:
-        """Return the current temperature."""
-        if not self.coordinator.data:
+        """Return room temperature 1, falling back to the return temperature."""
+        data = self.coordinator.data
+        if not data:
             return None
-        # Use room temperature if available, fallback to flow temperature
-        temp = self.coordinator.data.get("room_temperature")
-        if temp is None:
-            temp = self.coordinator.data.get("flow_temperature")
+        # The WPM reports exactly 0 when no room sensor is connected.
+        temp = data.get("room_temperature")
+        if not temp:
+            temp = data.get("return_temperature")
         return temp
 
     @property
     def target_temperature(self) -> float | None:
-        """Return the target temperature."""
+        """Return the room setpoint of heating circuit 1."""
         if not self.coordinator.data:
             return None
-        return self.coordinator.data.get("target_temperature")
+        return self.coordinator.data.get("hc1_room_setpoint")
 
     @property
     def hvac_mode(self) -> HVACMode:
-        """Return current HVAC mode based on device status."""
-        if not self.coordinator.data:
+        """Derive the HVAC mode from the Betriebsmodus, else from the status."""
+        data = self.coordinator.data
+        if not data:
             return HVACMode.OFF
 
-        status = self.coordinator.data.get("status", "off")
+        mode = data.get("operating_mode")
+        if mode in _MODE_TO_HVAC:
+            return _MODE_TO_HVAC[mode]
 
-        # Map device status to HVAC mode
-        if status in ("cooling", "passive_cooling", "cooling_mode"):
+        status = data.get("status", "off")
+        if status in _COOLING_STATES:
             return HVACMode.COOL
-        if status in (
-            "heating",
-            "heat_pump_on_heating",
-            "heat_pump_on_heating_auxiliary",
-            "hot_water",
-            "heat_pump_on_hot_water",
-            "heat_pump_on_hot_water_auxiliary",
-            "pool",
-            "heat_pump_on_pool",
-            "heat_pump_on_pool_auxiliary",
-            "defrost",
-            "heat_pump_on_defrost",
-        ):
+        if status in _HEATING_STATES + _DHW_STATES + _POOL_STATES:
             return HVACMode.HEAT
         return HVACMode.OFF
 
     @property
-    def hvac_action(self) -> str | None:
-        """Return the current running HVAC action."""
-        if not self.coordinator.data:
+    def hvac_action(self) -> HVACAction | None:
+        """Return what the heat pump is doing right now."""
+        data = self.coordinator.data
+        if not data:
             return None
 
-        status = self.coordinator.data.get("status", "off")
-
+        status = data.get("status", "off")
         if status == "off":
-            return "off"
-        if status in ("cooling", "passive_cooling", "cooling_mode"):
-            return "cooling"
-        if status in (
-            "heating",
-            "heat_pump_on_heating",
-            "heat_pump_on_heating_auxiliary",
-            "defrost",
-            "heat_pump_on_defrost",
-        ):
-            return "heating"
-        if status in ("hot_water", "heat_pump_on_hot_water", "heat_pump_on_hot_water_auxiliary"):
-            return "heating"  # DHW heating
-        return "idle"
+            return HVACAction.OFF
+        if status in _COOLING_STATES:
+            return HVACAction.COOLING
+        if status in _HEATING_STATES or status in _DHW_STATES or status in _POOL_STATES:
+            return HVACAction.HEATING
+        return HVACAction.IDLE
 
     @property
     def available(self) -> bool:
@@ -232,16 +215,17 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
             and self.coordinator.data.get("connected", False)
         )
 
+    # ----------------------------------------------------------------- commands
     async def async_set_temperature(self, **kwargs: Any) -> None:
-        """Set new target temperature."""
-        # Check if register is configured
-        if not self._has_temperature_register():
-            _LOGGER.error(
-                "Cannot set temperature: register not configured. "
-                "This is a development issue - see modbus_registers_extended.py"
+        """Write the room setpoint (register 46, 0.1 degC)."""
+        register_address = self._get_temperature_register()
+        if register_address is None:
+            _LOGGER.warning(
+                "Cannot set temperature: no setpoint register for WPM software %s",
+                self.coordinator.software_version,
             )
             return
-            
+
         if not self.coordinator.write_enabled:
             _LOGGER.warning(
                 "Cannot set temperature: write mode is disabled. "
@@ -252,45 +236,42 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
         temperature = kwargs.get(ATTR_TEMPERATURE)
         if temperature is None:
             return
+        temperature = min(
+            max(float(temperature), self._attr_min_temp), self._attr_max_temp
+        )
 
-        register_address = self._get_temperature_register()
-        # Already checked above, but satisfy type checker
-        if register_address is None:
-            return
+        reg_def = get_register_definition(
+            SettingsRegisters.HC1_ROOM_SETPOINT, self.coordinator.software_version
+        )
+        assert reg_def is not None
+        raw_value = reg_def.to_raw(temperature)
 
-        # Write temperature to device via Modbus
-        # Temperature values are typically stored in 0.1°C units
-        raw_value = int(temperature * 10)
         success = await self.coordinator.client.write_register(
             address=register_address,
             value=raw_value,
         )
-
-        if success:
-            _LOGGER.debug("Set temperature to %.1f°C (raw value: %d)", temperature, raw_value)
-            await self.coordinator.async_request_refresh()
-        else:
+        if not success:
             _LOGGER.error("Failed to set temperature to %.1f°C", temperature)
+            return
+
+        _LOGGER.debug(
+            "Set temperature to %.1f°C (raw value: %d)", temperature, raw_value
+        )
+        if self.coordinator.data is not None:
+            self.coordinator.data["hc1_room_setpoint"] = temperature
+            self.async_write_ha_state()
+        await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Set new target HVAC mode."""
-        # Check if register is configured
-        if not self._has_mode_register():
-            _LOGGER.error(
-                "Cannot set HVAC mode: register not configured. "
-                "This is a development issue - see modbus_registers_extended.py"
+        """Write the Betriebsmodus (register 5015)."""
+        register_address = self._get_mode_register()
+        if register_address is None:
+            _LOGGER.warning(
+                "Cannot set HVAC mode: no Betriebsmodus register for WPM software %s",
+                self.coordinator.software_version,
             )
             return
 
-        # The configured register is "Betriebsmodus" (season/system mode) and
-        # does not provide a true OFF state. Avoid mapping OFF to "Sommer".
-        if hvac_mode == HVACMode.OFF:
-            _LOGGER.warning(
-                "Cannot set HVAC mode to OFF via Betriebsmodus register. "
-                "No true OFF value is available for this control path."
-            )
-            return
-            
         if not self.coordinator.write_enabled:
             _LOGGER.warning(
                 "Cannot set HVAC mode: write mode is disabled. "
@@ -298,7 +279,6 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
             )
             return
 
-        # Prevent setting cooling mode if cooling is not installed
         if hvac_mode == HVACMode.COOL and not self.coordinator.cooling_enabled:
             _LOGGER.warning(
                 "Cannot set cooling mode: cooling is not installed in this system. "
@@ -306,50 +286,26 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
             )
             return
 
-        register_address = self._get_mode_register()
-        # Already checked above, but satisfy type checker
-        if register_address is None:
+        mode_value = _HVAC_TO_MODE_VALUE.get(hvac_mode)
+        if mode_value is None:
+            _LOGGER.warning("Unsupported HVAC mode %s", hvac_mode)
             return
 
-        # Map HVAC mode to device operating mode
-        mode_map = {
-            # The device "Betriebsmodus" is a system mode (Sommer/Winter/Kühlen…),
-            # not a simple OFF/HEAT/COOL enum. We map HA HVAC modes to the
-            # closest matching Betriebsmodus values.
-            HVACMode.OFF: int(OperatingMode.SUMMER),
-            HVACMode.HEAT: int(OperatingMode.WINTER),
-            HVACMode.COOL: int(OperatingMode.COOLING),
-        }
-
-        mode_value = mode_map.get(hvac_mode)
-        if mode_value is not None:
-            success = await self.coordinator.client.write_register(
-                address=register_address,
-                value=mode_value,
-            )
-            if success:
-                _LOGGER.debug("Set HVAC mode to %s (value: %d)", hvac_mode, mode_value)
-                await self.coordinator.async_request_refresh()
-            else:
-                _LOGGER.error("Failed to set HVAC mode to %s", hvac_mode)
-
-    def _get_temperature_register(self) -> int | None:
-        """Get the temperature setpoint register address for the current software version.
-
-        Returns:
-            Register address if configured, None if not available.
-        """
-        # Use heating circuit 1 comfort setpoint as the temperature setpoint
-        reg_def = get_register_definition(
-            SettingsRegisters.HC1_COMFORT_SETPOINT,
-            self.coordinator.software_version
+        success = await self.coordinator.client.write_register(
+            address=register_address,
+            value=mode_value,
         )
-        return reg_def.address if reg_def else None
+        if not success:
+            _LOGGER.error("Failed to set HVAC mode to %s", hvac_mode)
+            return
 
-    def _get_mode_register(self) -> int | None:
-        """Get the operating mode register address for the current software version.        Returns:
-            Register address if configured, None if not available.
-        """
-        return OperatingModeRegisters.CURRENT_MODE.get(
-            self.coordinator.software_version
-        )
+        _LOGGER.debug("Set HVAC mode to %s (Betriebsmodus %d)", hvac_mode, mode_value)
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_on(self) -> None:
+        """Switch heating circuit 1 to Winter."""
+        await self.async_set_hvac_mode(HVACMode.HEAT)
+
+    async def async_turn_off(self) -> None:
+        """Switch heating circuit 1 to Sommer (heating off, DHW continues)."""
+        await self.async_set_hvac_mode(HVACMode.OFF)

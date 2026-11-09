@@ -1,8 +1,9 @@
 """Tests for the Dimplex switch platform."""
+
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
 import pytest
 
@@ -56,5 +57,3 @@ async def test_write_enable_switch_unique_id_and_device_info():
 
     assert ent.unique_id == "entry1_write_enable"
     assert ent.device_info is not None
-
-

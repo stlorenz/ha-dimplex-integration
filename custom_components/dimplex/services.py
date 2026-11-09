@@ -6,11 +6,18 @@ import asyncio
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import DOMAIN
+from .modbus_registers_extended import (
+    COIL_DATAPOINTS,
+    REGISTER_DATAPOINTS,
+    get_coil_address,
+    get_register_definition,
+    read_32bit_value,
+    scale_value,
+)
 
 SERVICE_READ_HOLDING = "read_holding_registers"
 SERVICE_READ_INPUT = "read_input_registers"
@@ -23,7 +30,9 @@ SERVICE_READ_TIME_PROGRAM = "read_time_program"
 # Absenk-/Anhebung", WPM J/L/M). The block 5066..5081 is shared by all time
 # functions; register 5065 selects which one is addressed.
 TIME_PROGRAM_SELECT_REGISTER = 5065
-TIME_PROGRAM_BLOCK_START = 5066  # window1 start h/min, end h/min, window2 ..., 7 weekdays, value
+TIME_PROGRAM_BLOCK_START = (
+    5066  # window1 start h/min, end h/min, window2 ..., 7 weekdays, value
+)
 TIME_PROGRAM_BLOCK_LEN = 16
 TIME_PROGRAM_FUNCTIONS: dict[str, int] = {
     # Verified on WPM Touch (L/M), LA 1422C: 2 = HC1 raise, 3 = HC2 lower,
@@ -40,33 +49,12 @@ TIME_PROGRAM_FUNCTIONS: dict[str, int] = {
 WEEKDAY_ORDER = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
 WEEKDAY_MODES: dict[str, int] = {"both": 0, "off": 1, "window1": 2, "window2": 3}
 
-# Registers flagged "# UNVERIFIED" in modbus_registers_extended.py.
-# Reported both ways so the user can match whichever interpretation
-# corresponds to their WPM display.
-_PRESSURE_DIAGNOSTIC_REGISTERS: tuple[tuple[str, int], ...] = (
-    ("brine_pressure", 32),
-    ("water_pressure", 33),
-)
-
-_AUX_TEMP_DIAGNOSTIC_REGISTERS: tuple[tuple[str, int], ...] = (
-    ("evaporator_temperature", 20),
-    ("condenser_temperature", 21),
-    ("suction_gas_temperature", 22),
-    ("discharge_gas_temperature", 23),
-)
-
-# 32-bit registers where the byte/word order is currently unverified.
-# Each entry is (name, base address). Read 2 consecutive registers.
-_THIRTYTWO_BIT_DIAGNOSTIC_REGISTERS: tuple[tuple[str, int], ...] = (
-    ("compressor_runtime_total", 50),
-    ("compressor_starts", 52),
-    ("heating_runtime", 54),
-    ("hot_water_runtime", 56),
-    ("cooling_runtime", 58),
-    ("auxiliary_heater_runtime", 60),
-    ("defrost_cycles", 62),
-    ("total_energy_consumed", 80),
-    ("total_heat_generated", 82),
+# Flow / HC2 temperature (registers 5 / 9) were swapped in an earlier
+# version; the diagnose service keeps reporting them side by side with the
+# wiki labels so users can confirm the mapping on their device.
+_WIKI_CROSS_CHECK: tuple[tuple[int, str, str], ...] = (
+    (5, "Temperatur Vorlauf (R9)", "flow_temperature"),
+    (9, "Temperatur 2. Heizkreis (R5)", "hc2_temperature"),
 )
 
 
@@ -74,8 +62,16 @@ def _decode_signed_16(raw: int) -> int:
     return raw - 65536 if raw > 32767 else raw
 
 
-def _decode_signed_32(raw: int) -> int:
-    return raw - (1 << 32) if raw >= (1 << 31) else raw
+def _range_verdict(value: float, reg_def: Any) -> str:
+    """Compare a scaled value with the documented range."""
+    if reg_def.min_value is None and reg_def.max_value is None:
+        return "no_documented_range"
+    if reg_def.min_value is not None and value < reg_def.min_value:
+        return "below_documented_range"
+    if reg_def.max_value is not None and value > reg_def.max_value:
+        return "above_documented_range"
+    return "ok"
+
 
 _HASS_FLAG_SERVICES_REGISTERED = "__services_registered"
 
@@ -107,9 +103,7 @@ def _get_coordinator(hass: HomeAssistant, entry_id: str | None):
     if len(domain_data) == 1:
         return next(iter(domain_data.values()))
 
-    raise HomeAssistantError(
-        "Multiple Dimplex entries found; please pass entry_id"
-    )
+    raise HomeAssistantError("Multiple Dimplex entries found; please pass entry_id")
 
 
 async def async_register_services(hass: HomeAssistant) -> None:
@@ -122,7 +116,9 @@ async def async_register_services(hass: HomeAssistant) -> None:
     base_schema = vol.Schema(
         {
             vol.Optional("entry_id"): str,
-            vol.Required("address"): vol.All(vol.Coerce(int), vol.Range(min=0, max=65535)),
+            vol.Required("address"): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=65535)
+            ),
             vol.Optional("count", default=1): vol.All(
                 vol.Coerce(int), vol.Range(min=1, max=125)
             ),
@@ -153,7 +149,12 @@ async def async_register_services(hass: HomeAssistant) -> None:
         if values is None:
             raise HomeAssistantError("Read failed (no data returned)")
 
-        return {"address": address, "count": count, "unit_id": unit_id, "registers": values}
+        return {
+            "address": address,
+            "count": count,
+            "unit_id": unit_id,
+            "registers": values,
+        }
 
     async def handle_read_input(call: ServiceCall) -> dict[str, Any]:
         coordinator = _get_coordinator(hass, call.data.get("entry_id"))
@@ -170,11 +171,18 @@ async def async_register_services(hass: HomeAssistant) -> None:
         if values is None:
             raise HomeAssistantError("Read failed (no data returned)")
 
-        return {"address": address, "count": count, "unit_id": unit_id, "registers": values}
+        return {
+            "address": address,
+            "count": count,
+            "unit_id": unit_id,
+            "registers": values,
+        }
 
     write_schema = base_schema.extend(
         {
-            vol.Required("value"): vol.All(vol.Coerce(int), vol.Range(min=0, max=65535)),
+            vol.Required("value"): vol.All(
+                vol.Coerce(int), vol.Range(min=0, max=65535)
+            ),
         }
     )
 
@@ -279,8 +287,14 @@ async def async_register_services(hass: HomeAssistant) -> None:
         weekday_mode = WEEKDAY_MODES[call.data["weekdays"]]
 
         values = [
-            w1s[0], w1s[1], w1e[0], w1e[1],
-            w2s[0], w2s[1], w2e[0], w2e[1],
+            w1s[0],
+            w1s[1],
+            w1e[0],
+            w1e[1],
+            w2s[0],
+            w2s[1],
+            w2e[0],
+            w2e[1],
             *([weekday_mode] * 7),
             int(call.data["value"]),
         ]
@@ -297,7 +311,9 @@ async def async_register_services(hass: HomeAssistant) -> None:
             await asyncio.sleep(0.5)
             for offset, value in enumerate(values):
                 ok = await coordinator.client.write_register(
-                    address=TIME_PROGRAM_BLOCK_START + offset, value=value, slave=unit_id
+                    address=TIME_PROGRAM_BLOCK_START + offset,
+                    value=value,
+                    slave=unit_id,
                 )
                 if not ok:
                     raise HomeAssistantError(
@@ -355,7 +371,7 @@ async def async_register_services(hass: HomeAssistant) -> None:
             "function": call.data["function"],
             "window1": f"{regs[0]:02d}:{regs[1]:02d}-{regs[2]:02d}:{regs[3]:02d}",
             "window2": f"{regs[4]:02d}:{regs[5]:02d}-{regs[6]:02d}:{regs[7]:02d}",
-            "weekdays": dict(zip(WEEKDAY_ORDER, regs[8:15])),
+            "weekdays": dict(zip(WEEKDAY_ORDER, regs[8:15], strict=False)),
             "value_k": regs[15],
             "raw": regs,
         }
@@ -385,87 +401,100 @@ async def async_register_services(hass: HomeAssistant) -> None:
     )
 
     async def handle_diagnose_registers(call: ServiceCall) -> dict[str, Any]:
-        """Dump unverified registers in every plausible interpretation.
+        """Read every mapped datapoint once and check it against the wiki.
 
-        Use this once against a real device to pin down:
-          - Brine/Water pressure addresses (32/33) and scale (0.01 vs 0.1).
-          - Aux refrigerant temperatures at 20-23.
-          - 32-bit register word order (big-endian hi/lo vs lo/hi) for
-            runtime counters (50/52/54/56/58/60/62) and total energy
-            (80/82).
-        Compare each interpretation against the value shown on the WPM
-        display, then update modbus_registers_extended.py accordingly and
-        drop the `# UNVERIFIED` markers.
+        For each register in ``REGISTER_DATAPOINTS`` the raw word(s), the
+        scaled value and a verdict against the documented range are
+        returned; coils are listed with their state. Registers whose wiki
+        meaning differs from the mapping used by the integration (5 / 9)
+        are reported side by side so they can be matched with the WPM
+        display. ``scripts/validate_registers.py`` does the same from the
+        command line without Home Assistant.
         """
         coordinator = _get_coordinator(hass, call.data.get("entry_id"))
         unit_id = call.data["unit_id"]
+        sw = coordinator.software_version
 
-        async with asyncio.timeout(30):
+        registers: dict[str, Any] = {}
+        coils: dict[str, Any] = {}
+        cross_check: dict[str, Any] = {}
+        problems: list[str] = []
+
+        async with asyncio.timeout(120):
             await _ensure_connected(coordinator)
 
-            pressures: dict[str, Any] = {}
-            for name, addr in _PRESSURE_DIAGNOSTIC_REGISTERS:
-                values = await coordinator.client.read_holding_registers(
+            for key, register_dict in REGISTER_DATAPOINTS.items():
+                reg_def = get_register_definition(register_dict, sw)
+                if reg_def is None:
+                    continue
+                words = await coordinator.client.read_holding_registers(
+                    address=reg_def.address, count=reg_def.size, slave=unit_id
+                )
+                entry: dict[str, Any] = {
+                    "address": reg_def.address,
+                    "size": reg_def.size,
+                    "unit": reg_def.unit,
+                    "raw": list(words) if words is not None else None,
+                }
+                if words is None:
+                    entry["verdict"] = "read_failed"
+                    problems.append(f"{key}: read failed (register {reg_def.address})")
+                elif reg_def.decoder is not None:
+                    decoded = reg_def.decoder(list(words))
+                    entry["value"] = decoded
+                    entry["verdict"] = (
+                        "decode_failed"
+                        if decoded is None
+                        else _range_verdict(decoded, reg_def)
+                    )
+                else:
+                    raw = (
+                        read_32bit_value(list(words)) if reg_def.size == 2 else words[0]
+                    )
+                    value = scale_value(raw, reg_def)
+                    entry["value"] = round(value, 3)
+                    if reg_def.size == 1:
+                        entry["alt_signed"] = round(
+                            _decode_signed_16(words[0]) * reg_def.scale
+                            + reg_def.offset,
+                            3,
+                        )
+                    entry["verdict"] = _range_verdict(value, reg_def)
+                if entry["verdict"] not in ("ok", "no_documented_range", "read_failed"):
+                    problems.append(f"{key}: {entry['verdict']} ({entry.get('value')})")
+                registers[key] = entry
+
+            for key, coil_dict in COIL_DATAPOINTS.items():
+                addr = get_coil_address(coil_dict, sw)
+                if addr is None:
+                    continue
+                bits = await coordinator.client.read_coils(
                     address=addr, count=1, slave=unit_id
                 )
-                if values is None:
-                    pressures[name] = {"address": addr, "raw": None}
-                    continue
-                raw = values[0]
-                pressures[name] = {
+                coils[key] = {
                     "address": addr,
-                    "raw": raw,
-                    "scale_0_01_bar": round(raw * 0.01, 3),
-                    "scale_0_1_bar": round(raw * 0.1, 2),
+                    "state": bits[0] if bits else None,
                 }
 
-            aux_temps: dict[str, Any] = {}
-            for name, addr in _AUX_TEMP_DIAGNOSTIC_REGISTERS:
-                values = await coordinator.client.read_holding_registers(
+            for addr, wiki_name, mapped_key in _WIKI_CROSS_CHECK:
+                words = await coordinator.client.read_holding_registers(
                     address=addr, count=1, slave=unit_id
                 )
-                if values is None:
-                    aux_temps[name] = {"address": addr, "raw": None}
-                    continue
-                raw = values[0]
-                aux_temps[name] = {
-                    "address": addr,
-                    "raw": raw,
-                    "signed_0_1_celsius": round(_decode_signed_16(raw) * 0.1, 1),
-                    "unsigned_0_1_celsius": round(raw * 0.1, 1),
-                }
-
-            counters: dict[str, Any] = {}
-            for name, addr in _THIRTYTWO_BIT_DIAGNOSTIC_REGISTERS:
-                values = await coordinator.client.read_holding_registers(
-                    address=addr, count=2, slave=unit_id
-                )
-                if values is None or len(values) < 2:
-                    counters[name] = {
-                        "address": addr,
-                        "raw_words": values,
-                    }
-                    continue
-                hi_lo = (values[0] << 16) | values[1]
-                lo_hi = (values[1] << 16) | values[0]
-                counters[name] = {
-                    "address": addr,
-                    "raw_words": values,
-                    "big_endian_unsigned": hi_lo,
-                    "little_endian_unsigned": lo_hi,
-                    "big_endian_signed": _decode_signed_32(hi_lo),
-                    "little_endian_signed": _decode_signed_32(lo_hi),
-                    # Energy values use scale 0.1 kWh; show both for convenience.
-                    "big_endian_x0_1": round(hi_lo * 0.1, 1),
-                    "little_endian_x0_1": round(lo_hi * 0.1, 1),
+                cross_check[str(addr)] = {
+                    "wiki_name": wiki_name,
+                    "integration_uses_it_as": mapped_key,
+                    "value_celsius": (
+                        round(_decode_signed_16(words[0]) * 0.1, 1) if words else None
+                    ),
                 }
 
         return {
-            "software_version": int(coordinator.software_version),
+            "software_version": int(sw),
             "slave_id": unit_id,
-            "pressure_registers": pressures,
-            "aux_temperature_registers": aux_temps,
-            "thirtytwo_bit_registers": counters,
+            "problems": problems,
+            "registers": registers,
+            "coils": coils,
+            "wiki_cross_check": cross_check,
         }
 
     hass.services.async_register(
@@ -477,4 +506,3 @@ async def async_register_services(hass: HomeAssistant) -> None:
     )
 
     hass.data[DOMAIN][_HASS_FLAG_SERVICES_REGISTERED] = True
-

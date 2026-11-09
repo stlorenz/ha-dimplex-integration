@@ -1,0 +1,27 @@
+[tool.black]
+line-length = 88
+target-version = ["py313"]
+extend-exclude = "venv|\\.venv"
+
+[tool.isort]
+profile = "black"
+line_length = 88
+known_first_party = ["custom_components", "tests"]
+skip_glob = ["venv/*", ".venv/*"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+extend-exclude = ["venv", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "SIM", "I"]
+ignore = [
+    "E501",  # line length is handled by black
+    "B008",  # function calls in argument defaults (voluptuous schemas)
+    "B904",  # raise ... from err inside except: HA code commonly re-raises
+    "SIM102",  # nested ifs are often clearer around Modbus error handling
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["custom_components", "tests"]

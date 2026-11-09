@@ -1,7 +1,6 @@
 """Tests for Dimplex Modbus register definitions."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from custom_components.dimplex.modbus_registers import (
     SoftwareVersion,
@@ -98,10 +97,12 @@ def test_status_translations():
         STATUS_MESSAGES_LM,
         STATUS_TRANSLATIONS_EN,
     )
-    
+
     for key in STATUS_MESSAGES_LM.values():
         if not key.startswith("unknown"):
-            assert key in STATUS_TRANSLATIONS_EN, f"Missing translation for status: {key}"
+            assert (
+                key in STATUS_TRANSLATIONS_EN
+            ), f"Missing translation for status: {key}"
 
 
 def test_lock_translations():
@@ -110,8 +111,15 @@ def test_lock_translations():
         LOCK_MESSAGES_LM,
         LOCK_TRANSLATIONS_EN,
     )
-    
+
     for key in LOCK_MESSAGES_LM.values():
         if not key.startswith("unknown"):
             assert key in LOCK_TRANSLATIONS_EN, f"Missing translation for lock: {key}"
 
+
+def test_status_code_1_is_off_on_lm():
+    """Wiki Statusmeldungen: value 1 = 'Aus' on L/M (seen on an idle LA 1422C)."""
+    from custom_components.dimplex.modbus_registers import get_status_message
+
+    assert get_status_message(1, SoftwareVersion.L_M) == "off"
+    assert get_status_message(0, SoftwareVersion.L_M) == "off"
