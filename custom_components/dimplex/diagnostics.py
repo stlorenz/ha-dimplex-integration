@@ -32,6 +32,15 @@ async def async_get_config_entry_diagnostics(
     coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if coordinator is not None:
         diag["coordinator"] = {
+            "software_version": str(coordinator.software_version),
+            "model": coordinator.model,
+            "slave_id": coordinator.slave_id,
+            "write_enabled": coordinator.write_enabled,
+            "update_interval": (
+                coordinator.update_interval.total_seconds()
+                if coordinator.update_interval
+                else None
+            ),
             "last_update_success": coordinator.last_update_success,
             "last_exception": (
                 repr(coordinator.last_exception) if coordinator.last_exception else None

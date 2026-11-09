@@ -6,7 +6,7 @@ This document describes how to run and maintain tests for the Dimplex integratio
 
 ## Test Suite Overview
 
-144 unit tests (84 % coverage) across:
+163 unit tests (88 % coverage) across:
 
 - **Register map** (`test_modbus_registers.py`, `test_modbus_registers_extended.py`,
   `test_hot_water_settings.py`, `test_bcd_decoder.py`) - addresses against the Dimplex wiki,

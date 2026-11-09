@@ -12,6 +12,15 @@
           "software_version": "WPM-Softwareversion",
           "slave_id": "Modbus-Unit / Slave-ID"
         }
+      },
+      "reconfigure": {
+        "title": "Verbindung ändern",
+        "description": "Ändert, wie Home Assistant {name} erreicht. Entitäts-IDs und Verlauf bleiben erhalten.",
+        "data": {
+          "host": "Host oder IP-Adresse",
+          "port": "Port",
+          "slave_id": "Modbus-Unit / Slave-ID"
+        }
       }
     },
     "error": {
@@ -20,7 +29,8 @@
       "unknown": "Unerwarteter Fehler"
     },
     "abort": {
-      "already_configured": "Gerät ist bereits eingerichtet"
+      "already_configured": "Gerät ist bereits eingerichtet",
+      "reconfigure_successful": "Verbindungseinstellungen aktualisiert"
     }
   },
   "options": {

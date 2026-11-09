@@ -123,9 +123,9 @@ diagnose_registers:
     Read every datapoint the integration maps (holding registers and
     coils) once and return raw words, scaled value and a verdict against
     the range documented in the Dimplex wiki. Also reports registers 5
-    and 9 side by side (the wiki and the integration disagree on which
-    one is the flow temperature). Compare the result with the WPM Touch
-    display; anything listed under "problems" needs attention.
+    (flow temperature) and 9 (2nd heating circuit) side by side so the
+    mapping can be checked against the WPM Touch display while the
+    compressor runs. Anything listed under "problems" needs attention.
   fields:
     entry_id:
       name: Config entry
