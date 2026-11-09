@@ -13,6 +13,5 @@
   "requirements": [
     "pymodbus>=3.8.0"
   ],
-  "version": "0.2.0",
-  "description": "Dimplex heat pump (WPM / NWPM Touch) via Modbus TCP. Register map from the official Dimplex datapoint list; tested on an LA 1422C (WPM L/M)."
+  "version": "0.2.0"
 }

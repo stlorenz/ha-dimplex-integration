@@ -213,7 +213,7 @@ set_time_program:
             - both
             - window1
             - window2
-            - off
+            - "off"
     readback_delay:
       name: Read-back delay
       description: >-

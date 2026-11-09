@@ -344,7 +344,7 @@ For issues and questions:
 
 ## License
 
-[Add your license here]
+[MIT](LICENSE) © 2025–2026 Stefan Lorenz
 
 ## Acknowledgments
 

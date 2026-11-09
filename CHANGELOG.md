@@ -12,7 +12,12 @@ All notable changes to this integration are documented here. The format follows
 - Diagnostics download now includes software version, model, unit ID,
   Write Enable state and the current polling interval.
 - CI: `hassfest` and HACS validation jobs next to the Python 3.13 / 3.14 tests.
-- This changelog.
+- This changelog and an MIT license file.
+
+### Fixed
+- `manifest.json` carried a `description` key that hassfest rejects; the
+  `off` option of `set_time_program` was parsed as a YAML boolean.
+- `CONFIG_SCHEMA` declares the integration as UI-only (hassfest warning).
 
 ### Changed
 - Software versions H and J are labelled "unverified" in the setup dialog and
