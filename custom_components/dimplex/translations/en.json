@@ -27,10 +27,11 @@
     "step": {
       "init": {
         "title": "Select Model",
-        "description": "Select your heat pump model and WPM software version. This determines default capabilities and register addresses, which you can customize in the next step.",
+        "description": "Select your heat pump model, WPM software version and polling interval. This determines default capabilities and register addresses, which you can customize in the next step.",
         "data": {
           "model": "Heat Pump Model",
-          "software_version": "WPM Software Version"
+          "software_version": "WPM Software Version",
+          "scan_interval": "Polling interval (seconds)"
         }
       },
       "features": {
@@ -93,6 +94,7 @@
           "passive_cooling": "Passive Cooling"
         }
       },
+      "status_code": { "name": "Status Code" },
       "lock": {
         "name": "Lock Status",
         "state": {
@@ -130,9 +132,8 @@
           "hot_water": "Hot Water"
         }
       },
-      "status_code": {
-        "name": "Status Code"
-      },
+      "lock_code": { "name": "Lock Code" },
+      "error_code": { "name": "Error Code" },
       "error": {
         "name": "Error",
         "state": {
@@ -160,102 +161,107 @@
           "flow": "F31 — Flow Lost"
         }
       },
-      "lock_code": {
-        "name": "Lock Code"
-      },
-      "error_code": {
-        "name": "Error Code"
-      },
-      "sensor_error_code": {
-        "name": "Sensor Error Code"
-      },
-      "room_temperature_2": {
-        "name": "Room Temperature 2"
-      },
-      "return_setpoint": {
-        "name": "Return Setpoint"
-      },
-      "hc2_setpoint": {
-        "name": "HC2 Setpoint"
-      },
-      "hc2_temperature": {
-        "name": "HC2 Temperature"
-      },
-      "hc3_setpoint": {
-        "name": "HC3 Setpoint"
-      },
-      "hc3_temperature": {
-        "name": "HC3 Temperature"
-      },
-      "pv_surplus": {
-        "name": "PV Surplus"
-      },
-      "pool_energy": {
-        "name": "Pool Energy"
-      },
-      "environmental_energy": {
-        "name": "Environmental Energy"
-      },
-      "compressor_1_runtime": {
-        "name": "Compressor 1 Runtime"
-      },
-      "compressor_2_runtime": {
-        "name": "Compressor 2 Runtime"
-      },
-      "primary_pump_fan_runtime": {
-        "name": "Primary Pump / Fan Runtime"
-      },
-      "second_heat_generator_runtime": {
-        "name": "Second Heat Generator Runtime"
-      },
-      "heating_pump_runtime": {
-        "name": "Heating Pump Runtime"
-      },
-      "hot_water_pump_runtime": {
-        "name": "Hot Water Pump Runtime"
-      },
-      "immersion_heater_runtime": {
-        "name": "Immersion Heater Runtime"
-      },
-      "pool_pump_runtime": {
-        "name": "Pool Pump Runtime"
-      },
-      "aux_circ_pump_runtime": {
-        "name": "Auxiliary Circulation Pump Runtime"
-      }
+      "sensor_error_code": { "name": "Sensor Error Code" },
+      "flow_temperature": { "name": "Flow Temperature" },
+      "return_temperature": { "name": "Return Temperature" },
+      "outside_temperature": { "name": "Outside Temperature" },
+      "hot_water_temperature": { "name": "Hot Water Temperature" },
+      "heat_source_inlet_temperature": { "name": "Heat Source Inlet Temperature" },
+      "heat_source_outlet_temperature": { "name": "Heat Source Outlet Temperature" },
+      "room_temperature": { "name": "Room Temperature" },
+      "room_temperature_2": { "name": "Room Temperature 2" },
+      "room_humidity": { "name": "Room Humidity" },
+      "room_humidity_2": { "name": "Room Humidity 2" },
+      "return_setpoint": { "name": "Return Setpoint" },
+      "hot_water_setpoint": { "name": "Hot Water Setpoint" },
+      "hc2_setpoint": { "name": "HC2 Setpoint" },
+      "hc2_temperature": { "name": "HC2 Temperature" },
+      "hc3_setpoint": { "name": "HC3 Setpoint" },
+      "hc3_temperature": { "name": "HC3 Temperature" },
+      "passive_cooling_flow_temperature": { "name": "Passive Cooling Flow Temperature" },
+      "passive_cooling_return_temperature": { "name": "Passive Cooling Return Temperature" },
+      "primary_circuit_return_temperature": { "name": "Primary Circuit Return Temperature" },
+      "solar_storage_temperature": { "name": "Solar Storage Temperature" },
+      "high_pressure": { "name": "High Pressure" },
+      "low_pressure": { "name": "Low Pressure" },
+      "current_power_consumption": { "name": "Current Power Consumption" },
+      "current_heating_power": { "name": "Current Heating Power" },
+      "pv_surplus": { "name": "PV Surplus" },
+      "total_heat_generated": { "name": "Total Heat Generated" },
+      "heating_energy": { "name": "Heating Energy" },
+      "hot_water_energy": { "name": "Hot Water Energy" },
+      "pool_energy": { "name": "Pool Energy" },
+      "environmental_energy": { "name": "Environmental Energy" },
+      "cop": { "name": "Coefficient of Performance" },
+      "compressor_runtime_total": { "name": "Compressor Runtime Total" },
+      "compressor_1_runtime": { "name": "Compressor 1 Runtime" },
+      "compressor_2_runtime": { "name": "Compressor 2 Runtime" },
+      "primary_pump_fan_runtime": { "name": "Primary Pump / Fan Runtime" },
+      "second_heat_generator_runtime": { "name": "Second Heat Generator Runtime" },
+      "heating_pump_runtime": { "name": "Heating Pump Runtime" },
+      "hot_water_pump_runtime": { "name": "Hot Water Pump Runtime" },
+      "immersion_heater_runtime": { "name": "Immersion Heater Runtime" },
+      "pool_pump_runtime": { "name": "Pool Pump Runtime" },
+      "aux_circ_pump_runtime": { "name": "Auxiliary Circulation Pump Runtime" }
     },
     "binary_sensor": {
-      "error_active": {
-        "name": "Error Active"
-      },
-      "lock_active": {
-        "name": "Lock Active"
-      },
-      "heat_pump_running": {
-        "name": "Heat Pump Running"
-      },
-      "defrost_active": {
-        "name": "Defrost Active"
-      }
+      "error_active": { "name": "Error Active" },
+      "lock_active": { "name": "Lock Active" },
+      "heat_pump_running": { "name": "Heat Pump Running" },
+      "defrost_active": { "name": "Defrost Active" },
+      "evu_lock": { "name": "Utility Lock (EVU)" },
+      "external_lock": { "name": "External Lock" },
+      "smart_grid_1": { "name": "Smart Grid 1" },
+      "smart_grid_2": { "name": "Smart Grid 2" },
+      "compressor_1": { "name": "Compressor 1" },
+      "compressor_2": { "name": "Compressor 2" },
+      "primary_pump_fan": { "name": "Primary Pump / Fan" },
+      "second_heat_generator": { "name": "Second Heat Generator" },
+      "heating_pump_m13": { "name": "Heating Pump (M13)" },
+      "hot_water_pump": { "name": "Hot Water Pump (M18)" },
+      "aux_circ_pump": { "name": "Generator Circuit Pump (M16)" },
+      "flange_heater": { "name": "Flange Heater (E9)" },
+      "heating_pump_m15": { "name": "Heating Pump HC2 (M15)" },
+      "mixer_m21_open": { "name": "Mixer HC1 Opening (M21)" },
+      "mixer_m21_close": { "name": "Mixer HC1 Closing (M21)" },
+      "heating_pump_m20": { "name": "Heating Pump (M20)" },
+      "mixer_m22_open": { "name": "Mixer HC2 Opening (M22)" },
+      "mixer_m22_close": { "name": "Mixer HC2 Closing (M22)" },
+      "heating_pump_m14": { "name": "Heating Pump (M14)" },
+      "pool_pump": { "name": "Pool Pump (M19)" },
+      "cooling_pump": { "name": "Cooling Pump (M17)" },
+      "primary_pump_cooling": { "name": "Primary Pump Cooling (M12)" },
+      "room_thermostat_cooling": { "name": "Room Thermostats Cooling Mode (N9)" },
+      "solar_pump": { "name": "Solar Pump (M23)" },
+      "collective_fault": { "name": "Collective Fault (H5)" }
     },
     "switch": {
-      "write_enable": {
-        "name": "Write Enable"
+      "write_enable": { "name": "Write Enable" }
+    },
+    "select": {
+      "operating_mode": {
+        "name": "Operating Mode",
+        "state": {
+          "summer": "Summer",
+          "winter": "Winter",
+          "vacation": "Vacation",
+          "party": "Party",
+          "second_heat_generator": "Second Heat Generator",
+          "cooling": "Cooling"
+        }
       }
     },
     "number": {
-      "hot_water_setpoint_setting": {
-        "name": "Hot Water Setpoint"
-      },
-      "hot_water_max_setpoint": {
-        "name": "Hot Water Max Setpoint"
-      },
-      "hot_water_min_setpoint": {
-        "name": "Hot Water Min Setpoint"
-      },
-      "hot_water_hysteresis": {
-        "name": "Hot Water Hysteresis"
-      }
+      "hot_water_setpoint_setting": { "name": "Hot Water Setpoint" },
+      "hot_water_max_setpoint": { "name": "Hot Water Max Setpoint" },
+      "hot_water_min_setpoint": { "name": "Hot Water Min Setpoint" },
+      "hot_water_hysteresis": { "name": "Hot Water Hysteresis" },
+      "hc1_parallel_shift": { "name": "HC1 Heating Curve Parallel Shift" },
+      "hc1_heating_curve_endpoint": { "name": "HC1 Heating Curve Endpoint" },
+      "hc1_fixed_setpoint": { "name": "HC1 Fixed Setpoint" },
+      "hc1_hysteresis": { "name": "HC1 Hysteresis" },
+      "hc1_cooling_setpoint": { "name": "HC1 Cooling Setpoint" },
+      "hc1_cooling_setpoint_30": { "name": "HC1 Cooling Setpoint at 30 °C Outside" }
     }
   }
 }

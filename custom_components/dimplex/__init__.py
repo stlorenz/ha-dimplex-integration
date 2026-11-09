@@ -1,4 +1,5 @@
 """The Dimplex integration."""
+
 from __future__ import annotations
 
 import logging
@@ -16,8 +17,11 @@ from .const import (
     CONF_SLAVE_ID,
     CONF_SOFTWARE_VERSION,
     DEFAULT_PORT,
+    DEFAULT_SCAN_INTERVAL,
     DEFAULT_SLAVE_ID,
     DOMAIN,
+    MAX_SCAN_INTERVAL,
+    MIN_SCAN_INTERVAL,
     OPT_BRINE_CIRCUIT,
     OPT_COOLING_ENABLED,
     OPT_DEFROST,
@@ -27,6 +31,7 @@ from .const import (
     OPT_MIN_HEATING_POWER_KW,
     OPT_PASSIVE_COOLING,
     OPT_POOL_ENABLED,
+    OPT_SCAN_INTERVAL,
     OPT_SECOND_HEATING_CIRCUIT,
     HeatPumpModel,
     get_model_capabilities,
@@ -41,6 +46,7 @@ PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.CLIMATE,
     Platform.NUMBER,
+    Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
 ]
@@ -55,7 +61,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Dimplex from a config entry."""
     _LOGGER.debug("Setting up Dimplex integration for entry: %s", entry.entry_id)
-    
+
     # Get model (from options override if present, otherwise from data)
     model = entry.options.get(CONF_MODEL) or entry.data.get(
         CONF_MODEL, HeatPumpModel.GENERIC
@@ -76,7 +82,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         software_version = SoftwareVersion.L_M
 
     slave_id = entry.data.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID)
-    
+
+    try:
+        scan_interval = int(entry.options.get(OPT_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL))
+    except (TypeError, ValueError):
+        scan_interval = DEFAULT_SCAN_INTERVAL
+    scan_interval = min(max(scan_interval, MIN_SCAN_INTERVAL), MAX_SCAN_INTERVAL)
+
     # Build user overrides from options
     user_overrides = {
         OPT_PASSIVE_COOLING: entry.options.get(OPT_PASSIVE_COOLING),
@@ -88,9 +100,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
     # Remove None values
     user_overrides = {k: v for k, v in user_overrides.items() if v is not None}
-    
+
     # Get model capabilities with user overrides applied
-    model_caps = get_model_capabilities(model, user_overrides if user_overrides else None)
+    model_caps = get_model_capabilities(
+        model, user_overrides if user_overrides else None
+    )
 
     # Build effective capabilities from model defaults + user options
     capabilities = {
@@ -125,6 +139,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         software_version=software_version,
         slave_id=slave_id,
         config_entry=entry,
+        scan_interval=scan_interval,
     )
 
     # First refresh: if it fails, mark the entry as not-ready so HA retries setup.
@@ -173,4 +188,3 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok
-

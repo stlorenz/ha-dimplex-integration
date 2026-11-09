@@ -6,46 +6,23 @@ This document describes how to run and maintain tests for the Dimplex integratio
 
 ## Test Suite Overview
 
-The integration includes comprehensive unit tests covering:
+144 unit tests (84 % coverage) across:
 
-- **Modbus Client** (`test_modbus_client.py`) - 12 tests
-  - Connection management
-  - Register reading/writing
-  - Error handling
-  - System status reading
+- **Register map** (`test_modbus_registers.py`, `test_modbus_registers_extended.py`,
+  `test_hot_water_settings.py`, `test_bcd_decoder.py`) - addresses against the Dimplex wiki,
+  scaling/offset encoding, 12-digit counters, coil blocks
+- **Modbus client** (`test_modbus_client.py`) - connection, registers, coils, writes,
+  `read_operating_data` incl. derived values
+- **Coordinator** (`test_coordinator.py`) - updates, failures, timeouts, backoff
+- **Config / options flow** (`test_config_flow.py`)
+- **Platforms** (`test_sensor.py`, `test_binary_sensor.py`, `test_climate.py`,
+  `test_number.py`, `test_select.py`, `test_switch.py`)
+- **Services** (`test_services.py`) - raw register access, diagnose, time programme
+- **Integration init** (`test_init.py`)
 
-- **Data Coordinator** (`test_coordinator.py`) - 8 tests
-  - Data updates
-  - Connection failures
-  - Timeout handling
-  - Software version handling
-
-- **Config Flow** (`test_config_flow.py`) - 6 tests
-  - UI setup flow
-  - Connection validation
-  - Error scenarios
-
-- **Sensors** (`test_sensor.py`) - 7 tests
-  - Sensor creation
-  - Value reading
-  - State translation
-  - Device info
-
-- **Binary Sensors** (`test_binary_sensor.py`) - 9 tests
-  - Error/lock detection
-  - Running state
-  - Defrost detection
-
-- **Register Mappings** (`test_modbus_registers.py`) - 8 tests
-  - Register address resolution
-  - Status/lock message translation
-  - Software version support
-
-- **Integration Init** (`test_init.py`) - 3 tests
-  - Setup/unload entry
-  - Coordinator lifecycle
-
-**Total: 53+ unit tests** with code coverage tracking
+Requirements: Python 3.13 or newer (Home Assistant 2026.x). The CI runs the same
+suite plus `black --check`, `isort --check-only` and `ruff check` (configured in
+`pyproject.toml`).
 
 ---
 

@@ -20,20 +20,37 @@ A custom Home Assistant integration for Dimplex heat pumps with NWPM Touch Exten
 - **Error Monitoring** - Error code tracking and alerts
 - **Sensor Diagnostics** - Sensor error detection (L/M software only)
 
+### Operating Data (WPM software J/L/M)
+All addresses come from the official Dimplex datapoint list
+("Modbus TCP - Betriebsdaten / Laufzeiten / Wärme- und Energiemengen"):
+- **Temperatures** - outside, flow, return, hot water, heat source inlet/outlet,
+  room 1/2 (+ humidity), heating circuit 2/3, setpoints, passive cooling, solar storage
+- **Pressures** - high / low pressure (registers 8 / 101, observed on an LA 1422C,
+  not part of the official list)
+- **Power & energy** - electrical input, heating output, PV surplus, smoothed COP,
+  heat quantities for heating / hot water / pool / environmental energy
+- **Runtimes** - compressor 1/2, primary pump/fan, 2nd heat generator, pumps, flange heater
+
 ### Binary Sensors
-- Error Active indicator
-- Lock Active indicator
-- Heat Pump Running state
-- Defrost Active state
+- Error, lock, heat pump running and defrost indicators (all software versions)
+- **Digital inputs** (coils 3–6): EVU lock, external lock, Smart Grid 1/2
+- **Digital outputs** (coils 41–71): compressor 1/2, primary pump / fan,
+  2nd heat generator, heating / hot water / pool / cooling pumps, mixers,
+  flange heater, collective fault
 
-### Climate Control
-- Temperature display (read-only currently)
-- HVAC mode display
-- **Note:** Temperature and mode control require Modbus register addresses to be configured. Currently the integration is read-only for monitoring purposes.
+### Climate Control (heating circuit 1, WPM software J/L/M)
+- Target temperature = room setpoint, register 46 (15–30 °C, 0.5 °C steps)
+- HVAC mode = Betriebsmodus, register 5015: **Off** = Sommer (heating off, hot
+  water continues), **Heat** = Winter, **Cool** = Kühlen (only if cooling is installed)
+- Current temperature = room sensor 1, falling back to the return temperature
+- Writes require the **Write Enable** switch
 
-### Hot Water Settings (writable, WPM software J/L/M)
-Number entities backed by the verified holding registers from the Dimplex wiki
-("Modbus TCP - Einstellungen Warmwasser"):
+### Operating Mode Select
+`select.<name>_operating_mode` switches the Betriebsmodus directly:
+Sommer / Winter / Urlaub / Party / 2. Wärmeerzeuger / Kühlen.
+
+### Writable Settings (number entities, WPM software J/L/M)
+Hot water ("Modbus TCP - Einstellungen Warmwasser"):
 
 | Entity | Register | Range |
 |---|---|---|
@@ -42,9 +59,25 @@ Number entities backed by the verified holding registers from the Dimplex wiki
 | `number.<name>_hot_water_min_setpoint` | 5145 | 10..setpoint °C |
 | `number.<name>_hot_water_hysteresis` | 5045 | 2..15 K |
 
+Heating circuit 1 ("Modbus TCP - Einstellungen 1. Heiz-/Kühlkreis"):
+
+| Entity | Register | Range |
+|---|---|---|
+| `number.<name>_hc1_heating_curve_parallel_shift` | 5036 | −19..+19 K |
+| `number.<name>_hc1_heating_curve_endpoint` | 5038 | 20..70 °C |
+| `number.<name>_hc1_fixed_setpoint` | 5037 | 18..60 °C (disabled by default) |
+| `number.<name>_hc1_hysteresis` | 47 | 0.5..5.0 K |
+| `number.<name>_hc1_cooling_setpoint` | 5043 | 10..35 °C (cooling only) |
+| `number.<name>_hc1_cooling_setpoint_at_30_c_outside` | 5134 | 10..35 °C (cooling, L/M only) |
+
 Writes require the **Write Enable** switch. The WPM applies a new value with a
 short delay (a few seconds up to one poll interval); the entity shows the new
 value optimistically until the next poll confirms it.
+
+### Reliability
+- Polling interval configurable (10–300 s, default 30 s) in the integration options
+- Exponential backoff after consecutive failures (up to 5 min), automatic reconnect
+- Register writes are retried once after a network error
 
 ### Time Programme Services
 - `dimplex.set_time_program` – write a complete raise/lower (Anhebung/Absenkung)
@@ -113,6 +146,9 @@ data:
    - **Port**: Modbus TCP port (default: `502`)
    - **Name**: Friendly name for the device (e.g., `Dimplex Heat Pump`)
    - **Model**: Select your heat pump model (e.g., `LA 1422C (Air/Water)`)
+   - **WPM Software Version**: H, J or L/M (shown on the WPM display under Info).
+     Extended data and all controls need J or L/M.
+   - **Modbus Unit / Slave ID**: usually `1`
 
 ### Configuring Features
 
@@ -120,34 +156,40 @@ After setup, you can configure which features are installed in your system:
 
 1. Go to Settings → Devices & Services → Dimplex
 2. Click "Configure"
-3. Enable/disable features based on your installation:
+3. Adjust model, software version and the **polling interval** (10–300 s)
+4. Enable/disable features based on your installation:
    - **Cooling Installed**: Enable if active cooling is installed (not just heat pump capability)
    - **DHW Tank**: Enable if you have a domestic hot water tank
    - **Pool Circuit**: Enable if pool heating is installed
    - **Second Heating Circuit**: Enable if HC2 is configured
+   - **Passive Cooling**: enables the passive cooling temperature sensors
 
-This ensures the UI only shows controls relevant to your specific installation.
+This ensures the UI only shows entities relevant to your specific installation.
 
 ### Available Entities
 
-After setup, the following entities will be created:
+Entity ids use the device name you chose (`dimplex` below). The full list with
+registers is in [docs/REGISTER_MAPPING_GUIDE.md](docs/REGISTER_MAPPING_GUIDE.md).
 
-#### Sensors
-- `sensor.dimplex_status` - Current operational status
-- `sensor.dimplex_status_code` - Raw status code (diagnostic)
-- `sensor.dimplex_lock` - Current lock/blocking condition
-- `sensor.dimplex_lock_code` - Raw lock code (diagnostic)
-- `sensor.dimplex_error_code` - Current error code
-- `sensor.dimplex_sensor_error_code` - Sensor error code (L/M software only)
+#### Always (all software versions)
+- `sensor.dimplex_status`, `sensor.dimplex_lock`, `sensor.dimplex_error` - translated status / lock / error
+- `sensor.dimplex_status_code`, `_lock_code`, `_error_code`, `_sensor_error_code` - raw codes (diagnostic)
+- `binary_sensor.dimplex_error_active`, `_lock_active`, `_heat_pump_running`, `_defrost_active`
+- `switch.dimplex_write_enable` - must be on before anything is written to the WPM
+- `climate.dimplex` - display-only on software H
 
-#### Binary Sensors
-- `binary_sensor.dimplex_error_active` - Error present indicator
-- `binary_sensor.dimplex_lock_active` - Lock condition indicator
-- `binary_sensor.dimplex_heat_pump_running` - Running state
-- `binary_sensor.dimplex_defrost_active` - Defrost cycle indicator
+#### WPM software J / L/M
+- Temperature, humidity, pressure, power, energy and runtime sensors (see Features)
+- Coil based binary sensors for inputs and outputs (compressor, pumps, EVU lock, …).
+  Rarely used outputs are disabled by default and can be enabled in the entity settings.
+- `climate.dimplex` with room setpoint and Sommer / Winter / Kühlen mode
+- `select.dimplex_operating_mode`
+- Number entities for hot water and heating circuit 1 settings
 
-#### Climate
-- `climate.dimplex_climate` - Temperature control entity
+#### Services
+- `dimplex.read_holding_registers`, `dimplex.read_input_registers`, `dimplex.write_register` - raw access for mapping work
+- `dimplex.diagnose_registers` - reads every mapped datapoint and checks it against the documented range
+- `dimplex.set_time_program`, `dimplex.read_time_program`
 
 ## Usage Examples
 
@@ -167,17 +209,25 @@ automation:
           message: "Error code: {{ states('sensor.dimplex_error_code') }}"
 ```
 
-### Automation: External Lock Management
+### Automation: Summer Mode When It Stays Warm
 
 ```yaml
 automation:
-  - alias: "Lock Heat Pump During Peak Hours"
+  - alias: "Dimplex: switch to summer mode"
     trigger:
-      - platform: time
-        at: "17:00:00"
+      - platform: numeric_state
+        entity_id: sensor.dimplex_outside_temperature
+        above: 18
+        for: "24:00:00"
     action:
       - service: switch.turn_on
-        entity_id: switch.dimplex_external_lock
+        target:
+          entity_id: switch.dimplex_write_enable
+      - service: select.select_option
+        target:
+          entity_id: select.dimplex_operating_mode
+        data:
+          option: summer
 ```
 
 ### Dashboard Card
@@ -186,7 +236,10 @@ automation:
 type: entities
 entities:
   - entity: sensor.dimplex_status
-  - entity: climate.dimplex_climate
+  - entity: climate.dimplex
+  - entity: binary_sensor.dimplex_compressor_1
+  - entity: sensor.dimplex_current_heating_power
+  - entity: sensor.dimplex_coefficient_of_performance
   - entity: binary_sensor.dimplex_heat_pump_running
   - entity: binary_sensor.dimplex_error_active
   - entity: sensor.dimplex_lock
@@ -200,13 +253,28 @@ entry explicitly, as required by current HA). Tested against HA 2026.2.
 
 ## Software Version Support
 
-The integration automatically detects and supports different WPM software versions:
+The WPM software version is selected during setup (and can be changed in the
+options); there is no Modbus datapoint to detect it automatically.
 
-- **L/M Software** (Latest) - Full feature support including sensor errors
-- **J Software** - Full feature support
-- **H Software** - Basic feature support
+- **L/M Software** (current) - everything described above, including sensor errors
+- **J Software** - everything except the few L/M-only registers (auxiliary circulation pump runtime, cooling setpoint at 30 °C)
+- **H Software** - system status only (status, lock, error); no operating data, no controls
 
-Different software versions use different Modbus register addresses, which are handled automatically.
+Only L/M hardware (LA 1422C) has been tested so far. Please open an issue with
+the output of `scripts/validate_registers.py` if you run J or H.
+
+## Validating the register map on your device
+
+```bash
+python3 -m venv venv && venv/bin/pip install -r requirements_test.txt
+venv/bin/python scripts/validate_registers.py --host 192.168.1.33
+```
+
+The script reads every datapoint the integration knows, prints raw and scaled
+values with a verdict against the ranges documented by Dimplex, and prints
+registers 5 and 9 side by side (the wiki and this integration disagree on
+which one is the flow temperature, see
+[docs/REGISTER_MAPPING_GUIDE.md](docs/REGISTER_MAPPING_GUIDE.md)).
 
 ## Troubleshooting
 
@@ -235,7 +303,10 @@ Different software versions use different Modbus register addresses, which are h
 
 - [Dimplex Modbus TCP Documentation](https://dimplex.atlassian.net/wiki/spaces/DW/pages/3303571457/Modbus+TCP+Anbindung)
 - [System Status Registers](https://dimplex.atlassian.net/wiki/spaces/DW/pages/3303833601/Modbus+TCP+-+Systemstatus)
-- [Product Requirements Document](PRD.md)
+- [Register Map & Validation Guide](docs/REGISTER_MAPPING_GUIDE.md)
+- [Implementation Status](docs/IMPLEMENTATION_STATUS.md)
+- [Product Requirements Document](docs/PRD.md)
+- [Testing Guide](TESTING.md)
 
 ## Contributing
 
@@ -244,11 +315,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 ### Development Setup
 
 1. Clone the repository
-2. Create a development environment
-3. Install dependencies: `pip install pymodbus>=3.5.0`
-4. Make your changes
-5. Test with a real device or Modbus simulator
-6. Submit a pull request
+2. Python 3.13 or newer: `python3 -m venv venv && venv/bin/pip install -r requirements_test.txt`
+3. Run `venv/bin/pytest` (144 tests) and `venv/bin/black --check .`, `venv/bin/isort --check-only .`, `venv/bin/ruff check .`
+4. Validate register changes on hardware with `scripts/validate_registers.py`
+5. Submit a pull request
 
 ## Support
 

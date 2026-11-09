@@ -1,16 +1,23 @@
 """DataUpdateCoordinator for Dimplex integration."""
+
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 import logging
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN, MODEL_NAMES, HeatPumpModel
+from .const import (
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    MAX_BACKOFF_INTERVAL,
+    MODEL_NAMES,
+    HeatPumpModel,
+)
 from .modbus_client import DimplexModbusClient
 from .modbus_registers import (
     SoftwareVersion,
@@ -40,6 +47,7 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         capabilities: dict[str, Any] | None = None,
         slave_id: int = 1,
         config_entry: ConfigEntry | None = None,
+        scan_interval: int = DEFAULT_SCAN_INTERVAL,
     ) -> None:
         """Initialize.
 
@@ -54,6 +62,7 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             slave_id: Modbus unit/slave ID (defaults to 1)
             config_entry: Owning config entry (required by HA >= 2025.11 for
                 DataUpdateCoordinator; implicit detection is deprecated)
+            scan_interval: Polling interval in seconds (10..300)
 
         """
         self.host = host
@@ -66,12 +75,14 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.slave_id = slave_id
         self.client = DimplexModbusClient(host, port, slave_id=slave_id)
         self._write_enabled = False  # Default: read-only mode
+        self._base_interval = timedelta(seconds=scan_interval)
+        self._consecutive_failures = 0
 
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=30),
+            update_interval=self._base_interval,
             config_entry=config_entry,
         )
         _LOGGER.info(
@@ -79,13 +90,18 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             name,
             host,
             port,
-            30,
+            scan_interval,
         )
 
     @property
     def cooling_enabled(self) -> bool:
         """Return whether cooling is enabled for this installation."""
         return self.capabilities.get("cooling_enabled", False)
+
+    @property
+    def passive_cooling_enabled(self) -> bool:
+        """Return whether passive cooling is available (brine/water source)."""
+        return bool(self.capabilities.get("passive_cooling", False))
 
     @property
     def dhw_enabled(self) -> bool:
@@ -131,6 +147,32 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "enabled" if enabled else "disabled (read-only)",
         )
 
+    # ------------------------------------------------------------ backoff
+    def _register_success(self) -> None:
+        """Reset the polling interval after a successful update."""
+        if self._consecutive_failures:
+            _LOGGER.info(
+                "Dimplex device reachable again, polling every %ds",
+                self._base_interval.total_seconds(),
+            )
+        self._consecutive_failures = 0
+        self.update_interval = self._base_interval
+
+    def _register_failure(self) -> None:
+        """Exponentially back off (up to MAX_BACKOFF_INTERVAL) on repeated failures."""
+        self._consecutive_failures += 1
+        # 1st failure: 2x base, 2nd: 4x, ... capped at MAX_BACKOFF_INTERVAL
+        seconds = min(
+            self._base_interval.total_seconds() * (2**self._consecutive_failures),
+            MAX_BACKOFF_INTERVAL,
+        )
+        self.update_interval = timedelta(seconds=seconds)
+        _LOGGER.debug(
+            "Dimplex update failed %d time(s) in a row, next attempt in %ds",
+            self._consecutive_failures,
+            seconds,
+        )
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from Dimplex device.
 
@@ -141,11 +183,23 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             UpdateFailed: If communication with device fails
 
         """
+        try:
+            data = await self._fetch()
+        except UpdateFailed:
+            self._register_failure()
+            raise
+        self._register_success()
+        return data
+
+    async def _fetch(self) -> dict[str, Any]:
+        """Do one complete poll of the device."""
         _LOGGER.debug("Starting data update from Dimplex device")
         try:
             # Ensure connection
             if not self.client.is_connected:
-                _LOGGER.info("Reconnecting to Dimplex device at %s:%s", self.host, self.port)
+                _LOGGER.info(
+                    "Reconnecting to Dimplex device at %s:%s", self.host, self.port
+                )
                 connected = await self.client.connect()
                 if not connected:
                     raise UpdateFailed("Failed to connect to Dimplex device")
@@ -163,7 +217,9 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             # Check if we got at least some data (at least status_code should be present)
             if not system_status or "status_code" not in system_status:
-                _LOGGER.warning("Incomplete system status data received: %s", system_status)
+                _LOGGER.warning(
+                    "Incomplete system status data received: %s", system_status
+                )
                 raise UpdateFailed("No valid status data received from device")
 
             # Process status codes into readable strings
@@ -194,30 +250,33 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     data["sensor_error_code"] = sensor_error[0]
 
             # Read operating data (temperatures, pressures, power, energy, runtime)
-            # This provides HA-compliant sensor data for InfluxDB/Grafana integration
             # Continue even if some reads fail - partial data is better than no data
             try:
                 async with asyncio.timeout(30):
                     operating_data = await self.client.read_operating_data(
                         self.software_version
                     )
-                    # Merge operating data into main data dictionary
                     if operating_data:
                         data.update(operating_data)
                     else:
-                        _LOGGER.warning("No operating data received, but continuing with system status data")
+                        _LOGGER.warning(
+                            "No operating data received, but continuing with system status data"
+                        )
             except TimeoutError:
-                _LOGGER.warning("Timeout reading operating data, but continuing with system status data")
-                # Continue with system status data only
+                _LOGGER.warning(
+                    "Timeout reading operating data, but continuing with system status data"
+                )
             except Exception as err:
-                _LOGGER.warning("Error reading operating data: %s, but continuing with system status data", err)
-                # Continue with system status data only
+                _LOGGER.warning(
+                    "Error reading operating data: %s, but continuing with system status data",
+                    err,
+                )
 
             _LOGGER.debug(
                 "Successfully updated data from Dimplex device. "
                 "Keys: %s, Data points: %d",
                 list(data.keys()),
-                len(data)
+                len(data),
             )
             return data
 
@@ -242,5 +301,6 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"Error communicating with device: {err}") from err
 
     async def async_shutdown(self) -> None:
-        """Shutdown the coordinator and disconnect."""
+        """Disconnect from the device and stop the coordinator."""
         await self.client.disconnect()
+        await super().async_shutdown()

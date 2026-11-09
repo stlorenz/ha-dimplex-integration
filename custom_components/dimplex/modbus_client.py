@@ -1,23 +1,28 @@
 """Modbus TCP client for Dimplex heat pump."""
+
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 from typing import Any
 
 from pymodbus.client import AsyncModbusTcpClient
 from pymodbus.exceptions import ModbusException
 
+from .modbus_registers import SoftwareVersion
 from .modbus_registers_extended import (
-    EnergyRegisters,
-    OperatingDataRegisters,
+    COIL_DATAPOINTS,
+    INPUT_COIL_BLOCK,
+    OPERATING_MODE_KEYS,
+    OUTPUT_COIL_BLOCK,
+    REGISTER_DATAPOINTS,
     RegisterDefinition,
-    RuntimeRegisters,
-    SettingsRegisters,
+    get_coil_address,
     get_register_definition,
     read_32bit_value,
     scale_value,
 )
-from .modbus_registers import SoftwareVersion
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,13 +39,16 @@ MAX_REALISTIC_COP = 8.0
 # 0.3 means new value has 30% weight, previous smoothed value has 70% weight
 COP_SMOOTHING_ALPHA = 0.3
 
+# Writes are retried once after a short pause (the WPM occasionally drops a
+# request while it is busy updating its display).
+WRITE_RETRIES = 2
+WRITE_RETRY_DELAY = 0.5
+
 
 class DimplexModbusClient:
     """Dimplex Modbus TCP client wrapper."""
 
-    def __init__(
-        self, host: str, port: int = DEFAULT_PORT, slave_id: int = 1
-    ) -> None:
+    def __init__(self, host: str, port: int = DEFAULT_PORT, slave_id: int = 1) -> None:
         """Initialize the Modbus client.
 
         Args:
@@ -101,10 +109,8 @@ class DimplexModbusClient:
         """
         # Disconnect existing connection if any
         if self._client is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._client.close()
-            except Exception:
-                pass
             self._client = None
             self._connected = False
             # Reset COP smoothing state on disconnect
@@ -120,29 +126,29 @@ class DimplexModbusClient:
             self._connected = self._client.connected
 
             if self._connected:
-                _LOGGER.info("Connected to Dimplex device at %s:%s", self.host, self.port)
+                _LOGGER.info(
+                    "Connected to Dimplex device at %s:%s", self.host, self.port
+                )
             else:
-                _LOGGER.error("Failed to connect to Dimplex device at %s:%s", self.host, self.port)
+                _LOGGER.error(
+                    "Failed to connect to Dimplex device at %s:%s", self.host, self.port
+                )
 
             return self._connected
         except OSError as err:
             _LOGGER.error("Network error connecting to Dimplex device: %s", err)
             self._connected = False
             if self._client is not None:
-                try:
+                with contextlib.suppress(Exception):
                     self._client.close()
-                except Exception:
-                    pass
                 self._client = None
             return False
         except ModbusException as err:
             _LOGGER.error("Modbus error connecting to device: %s", err)
             self._connected = False
             if self._client is not None:
-                try:
+                with contextlib.suppress(Exception):
                     self._client.close()
-                except Exception:
-                    pass
                 self._client = None
             return False
 
@@ -188,7 +194,9 @@ class DimplexModbusClient:
             )
 
             if result.isError():
-                _LOGGER.error("Error reading holding registers at %s: %s", address, result)
+                _LOGGER.error(
+                    "Error reading holding registers at %s: %s", address, result
+                )
                 return None
 
             return result.registers
@@ -228,7 +236,9 @@ class DimplexModbusClient:
             )
 
             if result.isError():
-                _LOGGER.error("Error reading input registers at %s: %s", address, result)
+                _LOGGER.error(
+                    "Error reading input registers at %s: %s", address, result
+                )
                 return None
 
             return result.registers
@@ -240,10 +250,51 @@ class DimplexModbusClient:
             self._connected = False
             return None
 
+    async def read_coils(
+        self, address: int, count: int = 1, slave: int | None = None
+    ) -> list[bool] | None:
+        """Read coils (digital inputs/outputs, FC01) from the device.
+
+        Args:
+            address: Starting coil address
+            count: Number of coils to read
+            slave: Modbus slave ID; falls back to the client's configured ID
+
+        Returns:
+            List of ``count`` booleans or None on error
+
+        """
+        if not self.is_connected or self._client is None:
+            _LOGGER.warning("Cannot read coils: not connected")
+            return None
+
+        unit_id = slave if slave is not None else self.slave_id
+        try:
+            result = await self._call_with_unit_id(
+                self._client.read_coils,
+                address=address,
+                count=count,
+                unit_id=unit_id,
+            )
+
+            if result.isError():
+                _LOGGER.error("Error reading coils at %s: %s", address, result)
+                return None
+
+            # pymodbus pads the bit list to a full byte; trim to what was asked.
+            return [bool(bit) for bit in result.bits[:count]]
+        except ModbusException as err:
+            _LOGGER.error("Modbus exception reading coils: %s", err)
+            return None
+        except OSError as err:
+            _LOGGER.error("Network error reading coils: %s", err)
+            self._connected = False
+            return None
+
     async def write_register(
         self, address: int, value: int, slave: int | None = None
     ) -> bool:
-        """Write a single register to the device.
+        """Write a single register to the device (with one retry).
 
         Args:
             address: Register address
@@ -254,32 +305,52 @@ class DimplexModbusClient:
             True if write successful, False otherwise
 
         """
-        if not self.is_connected or self._client is None:
-            _LOGGER.warning("Cannot write register: not connected")
-            return False
-
         unit_id = slave if slave is not None else self.slave_id
-        try:
-            result = await self._call_with_unit_id(
-                self._client.write_register,
-                address=address,
-                value=value,
-                unit_id=unit_id,
-            )
 
-            if result.isError():
-                _LOGGER.error("Error writing register at %s: %s", address, result)
+        for attempt in range(1, WRITE_RETRIES + 1):
+            if not self.is_connected or self._client is None:
+                if attempt == 1:
+                    _LOGGER.warning("Cannot write register: not connected")
+                    return False
+                if not await self.connect():
+                    return False
+                assert self._client is not None
+
+            try:
+                result = await self._call_with_unit_id(
+                    self._client.write_register,
+                    address=address,
+                    value=value,
+                    unit_id=unit_id,
+                )
+
+                if result.isError():
+                    _LOGGER.error("Error writing register at %s: %s", address, result)
+                    return False
+
+                _LOGGER.debug(
+                    "Successfully wrote value %s to register %s", value, address
+                )
+                return True
+            except ModbusException as err:
+                _LOGGER.error("Modbus exception writing register: %s", err)
+                return False
+            except OSError as err:
+                self._connected = False
+                if attempt < WRITE_RETRIES:
+                    _LOGGER.warning(
+                        "Network error writing register %s (attempt %d/%d): %s - retrying",
+                        address,
+                        attempt,
+                        WRITE_RETRIES,
+                        err,
+                    )
+                    await asyncio.sleep(WRITE_RETRY_DELAY)
+                    continue
+                _LOGGER.error("Network error writing register: %s", err)
                 return False
 
-            _LOGGER.debug("Successfully wrote value %s to register %s", value, address)
-            return True
-        except ModbusException as err:
-            _LOGGER.error("Modbus exception writing register: %s", err)
-            return False
-        except OSError as err:
-            _LOGGER.error("Network error writing register: %s", err)
-            self._connected = False
-            return False
+        return False
 
     async def test_connection(self) -> bool:
         """Test the connection by attempting to read a register.
@@ -296,7 +367,9 @@ class DimplexModbusClient:
         result = await self.read_holding_registers(address=103, count=1)
         return result is not None
 
-    async def read_system_status(self, status_reg: int, lock_reg: int, error_reg: int) -> dict[str, Any]:
+    async def read_system_status(
+        self, status_reg: int, lock_reg: int, error_reg: int
+    ) -> dict[str, Any]:
         """Read all system status registers.
 
         Args:
@@ -348,182 +421,144 @@ class DimplexModbusClient:
         # Pass unit id positionally to avoid keyword name churn ("slave"/"unit"/"device_id")
         # and to satisfy stricter type checkers.
         result = await self.read_holding_registers(register_def.address, count, slave)
-        
+
         if result is None:
             return None
-            
-        # Custom decoder (used e.g. for BCD-packed multi-word counters)
+
+        # Custom decoder (used e.g. for 12-digit multi-word counters)
         if register_def.decoder is not None:
             decoded = register_def.decoder(result)
             if decoded is None:
                 return None
-            return float(decoded) * register_def.scale
+            return float(decoded) * register_def.scale + register_def.offset
 
         # Default decoding: 16-bit or 32-bit.
-        if count == 2:
-            raw_value = read_32bit_value(result)
-        else:
-            raw_value = result[0]
+        raw_value = read_32bit_value(result) if count == 2 else result[0]
 
         return scale_value(raw_value, register_def)
+
+    async def _read_coil_block(
+        self,
+        software_version: SoftwareVersion,
+        block: tuple[int, int],
+        data: dict[str, Any],
+    ) -> None:
+        """Read one coil block and store every mapped coil in ``data``."""
+        start, count = block
+        wanted = {
+            key: addr
+            for key, coil_dict in COIL_DATAPOINTS.items()
+            if (addr := get_coil_address(coil_dict, software_version)) is not None
+            and start <= addr < start + count
+        }
+        if not wanted:
+            return
+
+        bits = await self.read_coils(start, count)
+        if bits is None:
+            return
+
+        for key, addr in wanted.items():
+            index = addr - start
+            if index < len(bits):
+                data[key] = bits[index]
+
+    def _calculate_cop(self, data: dict[str, Any]) -> None:
+        """Derive a smoothed COP from the current power values."""
+        if (
+            "current_power_consumption" not in data
+            or "current_heating_power" not in data
+        ):
+            return
+
+        power_in = data["current_power_consumption"]
+        power_out = data["current_heating_power"]
+
+        # Only calculate COP when both power values are above minimum thresholds
+        # This avoids unrealistic spikes during mode transitions (e.g., when pump switches)
+        if power_in >= MIN_POWER_IN_FOR_COP and power_out >= MIN_POWER_OUT_FOR_COP:
+            raw_cop = power_out / power_in
+
+            # Cap unrealistic values (e.g., from measurement artifacts during transitions)
+            if raw_cop > MAX_REALISTIC_COP:
+                _LOGGER.debug(
+                    "Capping unrealistic COP value %.2f (power_in=%.0fW, power_out=%.0fW)",
+                    raw_cop,
+                    power_in,
+                    power_out,
+                )
+                raw_cop = MAX_REALISTIC_COP
+
+            # Apply exponential moving average smoothing
+            if self._smoothed_cop is not None:
+                smoothed_cop = (
+                    COP_SMOOTHING_ALPHA * raw_cop
+                    + (1 - COP_SMOOTHING_ALPHA) * self._smoothed_cop
+                )
+            else:
+                smoothed_cop = raw_cop
+
+            self._smoothed_cop = smoothed_cop
+            data["cop"] = round(smoothed_cop, 2)
+        elif power_in > 0:
+            # Power values below threshold - don't calculate new COP
+            # but keep previous smoothed value if available
+            if self._smoothed_cop is not None:
+                data["cop"] = round(self._smoothed_cop, 2)
 
     async def read_operating_data(
         self, software_version: SoftwareVersion
     ) -> dict[str, Any]:
         """Read all operating data (temperatures, pressures, power, etc.).
-        
+
+        Every datapoint in ``REGISTER_DATAPOINTS`` that has an address for the
+        given software version is read individually; coils are read in two
+        block requests. Derived values (COP, totals, operating mode name) are
+        added at the end.
+
         Args:
             software_version: WPM software version to determine register addresses
-            
+
         Returns:
             Dictionary with all operating data values
         """
         data: dict[str, Any] = {}
-        
-        # Read temperature values
-        temp_registers = [
-            ("flow_temperature", OperatingDataRegisters.FLOW_TEMPERATURE),
-            ("return_temperature", OperatingDataRegisters.RETURN_TEMPERATURE),
-            ("outside_temperature", OperatingDataRegisters.OUTSIDE_TEMPERATURE),
-            ("hot_water_temperature", OperatingDataRegisters.HOT_WATER_TEMPERATURE),
-            ("heat_source_inlet_temperature", OperatingDataRegisters.HEAT_SOURCE_INLET_TEMP),
-            ("heat_source_outlet_temperature", OperatingDataRegisters.HEAT_SOURCE_OUTLET_TEMP),
-            ("room_temperature", OperatingDataRegisters.ROOM_TEMPERATURE),
-            ("flow_setpoint", OperatingDataRegisters.FLOW_SETPOINT),
-            ("return_setpoint", OperatingDataRegisters.RETURN_SETPOINT),
-            ("hot_water_setpoint", OperatingDataRegisters.HOT_WATER_SETPOINT),
-            ("hc2_setpoint", OperatingDataRegisters.HC2_SETPOINT),
-            ("hc3_setpoint", OperatingDataRegisters.HC3_SETPOINT),
-            ("hc2_temperature", OperatingDataRegisters.HC2_TEMPERATURE),
-            ("hc3_temperature", OperatingDataRegisters.HC3_TEMPERATURE),
-            ("room_temperature_2", OperatingDataRegisters.ROOM_TEMPERATURE_2),
-            ("evaporator_temperature", OperatingDataRegisters.EVAPORATOR_TEMPERATURE),
-            ("condenser_temperature", OperatingDataRegisters.CONDENSER_TEMPERATURE),
-            ("suction_gas_temperature", OperatingDataRegisters.SUCTION_GAS_TEMPERATURE),
-            ("discharge_gas_temperature", OperatingDataRegisters.DISCHARGE_GAS_TEMPERATURE),
-        ]
-        
-        for key, register_dict in temp_registers:
+
+        for key, register_dict in REGISTER_DATAPOINTS.items():
             reg_def = get_register_definition(register_dict, software_version)
-            if reg_def:
-                value = await self._read_register_with_definition(reg_def)
-                if value is not None:
-                    data[key] = value
-        
-        # Read pressure values
-        pressure_registers = [
-            ("high_pressure", OperatingDataRegisters.HIGH_PRESSURE),
-            ("low_pressure", OperatingDataRegisters.LOW_PRESSURE),
-            ("brine_pressure", OperatingDataRegisters.BRINE_PRESSURE),
-            ("water_pressure", OperatingDataRegisters.WATER_PRESSURE),
+            if reg_def is None:
+                continue
+            value = await self._read_register_with_definition(reg_def)
+            if value is not None:
+                data[key] = value
+
+        await self._read_coil_block(software_version, INPUT_COIL_BLOCK, data)
+        await self._read_coil_block(software_version, OUTPUT_COIL_BLOCK, data)
+
+        # --- Derived values ---------------------------------------------
+        self._calculate_cop(data)
+
+        runtimes = [
+            data[k]
+            for k in ("compressor_1_runtime", "compressor_2_runtime")
+            if k in data
         ]
-        
-        for key, register_dict in pressure_registers:
-            reg_def = get_register_definition(register_dict, software_version)
-            if reg_def:
-                value = await self._read_register_with_definition(reg_def)
-                if value is not None:
-                    data[key] = value
-        
-        # Read power and energy values
-        energy_registers = [
-            ("current_power_consumption", EnergyRegisters.CURRENT_POWER_CONSUMPTION),
-            ("current_heating_power", EnergyRegisters.CURRENT_HEATING_POWER),
-            ("pv_surplus", EnergyRegisters.PV_SURPLUS),
-            ("total_energy_consumed", EnergyRegisters.TOTAL_ENERGY_CONSUMED),
-            ("total_heat_generated", EnergyRegisters.TOTAL_HEAT_GENERATED),
-            ("heating_energy", EnergyRegisters.HEATING_ENERGY),
-            ("hot_water_energy", EnergyRegisters.HOT_WATER_ENERGY),
-            ("cooling_energy", EnergyRegisters.COOLING_ENERGY),
-            ("pool_energy", EnergyRegisters.POOL_ENERGY),
-            ("environmental_energy", EnergyRegisters.ENVIRONMENTAL_ENERGY),
+        if runtimes:
+            data["compressor_runtime_total"] = sum(runtimes)
+
+        heat = [
+            data[k]
+            for k in ("heating_energy", "hot_water_energy", "pool_energy")
+            if k in data
         ]
-        
-        for key, register_dict in energy_registers:
-            reg_def = get_register_definition(register_dict, software_version)
-            if reg_def:
-                value = await self._read_register_with_definition(reg_def)
-                if value is not None:
-                    data[key] = value
-        
-        # Read runtime and counter values
-        runtime_registers = [
-            ("compressor_runtime_total", RuntimeRegisters.COMPRESSOR_RUNTIME_TOTAL),
-            ("compressor_starts", RuntimeRegisters.COMPRESSOR_STARTS),
-            ("heating_runtime", RuntimeRegisters.HEATING_RUNTIME),
-            ("hot_water_runtime", RuntimeRegisters.HOT_WATER_RUNTIME),
-            ("cooling_runtime", RuntimeRegisters.COOLING_RUNTIME),
-            ("auxiliary_heater_runtime", RuntimeRegisters.AUXILIARY_HEATER_RUNTIME),
-            ("defrost_cycles", RuntimeRegisters.DEFROST_CYCLES),
-            ("compressor_1_runtime", RuntimeRegisters.COMPRESSOR_1_RUNTIME),
-            ("compressor_2_runtime", RuntimeRegisters.COMPRESSOR_2_RUNTIME),
-            ("primary_pump_fan_runtime", RuntimeRegisters.PRIMARY_PUMP_FAN_RUNTIME),
-            ("second_heat_generator_runtime", RuntimeRegisters.SECOND_HEAT_GENERATOR_RUNTIME),
-            ("heating_pump_runtime", RuntimeRegisters.HEATING_PUMP_RUNTIME),
-            ("hot_water_pump_runtime", RuntimeRegisters.HOT_WATER_PUMP_RUNTIME),
-            ("immersion_heater_runtime", RuntimeRegisters.IMMERSION_HEATER_RUNTIME),
-            ("pool_pump_runtime", RuntimeRegisters.POOL_PUMP_RUNTIME),
-            ("aux_circ_pump_runtime", RuntimeRegisters.AUX_CIRC_PUMP_RUNTIME),
-        ]
-        
-        for key, register_dict in runtime_registers:
-            reg_def = get_register_definition(register_dict, software_version)
-            if reg_def:
-                value = await self._read_register_with_definition(reg_def)
-                if value is not None:
-                    data[key] = value
-        
-        # Calculate COP if we have both power values
-        if "current_power_consumption" in data and "current_heating_power" in data:
-            power_in = data["current_power_consumption"]
-            power_out = data["current_heating_power"]
-            
-            # Only calculate COP when both power values are above minimum thresholds
-            # This avoids unrealistic spikes during mode transitions (e.g., when pump switches)
-            if power_in >= MIN_POWER_IN_FOR_COP and power_out >= MIN_POWER_OUT_FOR_COP:
-                raw_cop = power_out / power_in
-                
-                # Cap unrealistic values (e.g., from measurement artifacts during transitions)
-                if raw_cop > MAX_REALISTIC_COP:
-                    _LOGGER.debug(
-                        "Capping unrealistic COP value %.2f (power_in=%.0fW, power_out=%.0fW)",
-                        raw_cop, power_in, power_out
-                    )
-                    raw_cop = MAX_REALISTIC_COP
-                
-                # Apply exponential moving average smoothing
-                if self._smoothed_cop is not None:
-                    # EMA: new_value = alpha * raw_value + (1 - alpha) * previous_smoothed_value
-                    smoothed_cop = COP_SMOOTHING_ALPHA * raw_cop + (1 - COP_SMOOTHING_ALPHA) * self._smoothed_cop
-                else:
-                    # First value: use raw COP as starting point
-                    smoothed_cop = raw_cop
-                
-                # Update stored smoothed value
-                self._smoothed_cop = smoothed_cop
-                
-                # Round to 2 decimal places for display
-                data["cop"] = round(smoothed_cop, 2)
-            elif power_in > 0:
-                # Power values below threshold - don't calculate new COP
-                # but keep previous smoothed value if available
-                if self._smoothed_cop is not None:
-                    data["cop"] = round(self._smoothed_cop, 2)
-                # If no previous value, don't set COP (will be None/unavailable)
-        
-        # Read writable hot water settings (whole °C / K, see SettingsRegisters)
-        settings_registers = [
-            ("hot_water_setpoint_setting", SettingsRegisters.HOT_WATER_COMFORT_SETPOINT),
-            ("hot_water_max_setpoint", SettingsRegisters.HOT_WATER_MAX_SETPOINT),
-            ("hot_water_min_setpoint", SettingsRegisters.HOT_WATER_MIN_SETPOINT),
-            ("hot_water_hysteresis", SettingsRegisters.HOT_WATER_HYSTERESIS),
-        ]
-        for key, register_dict in settings_registers:
-            reg_def = get_register_definition(register_dict, software_version)
-            if reg_def is not None:
-                value = await self._read_register_with_definition(reg_def)
-                if value is not None:
-                    data[key] = value
+        if heat:
+            data["total_heat_generated"] = sum(heat)
+
+        mode_code = data.get("operating_mode_code")
+        if mode_code is not None:
+            data["operating_mode"] = OPERATING_MODE_KEYS.get(
+                int(mode_code), f"unknown_{int(mode_code)}"
+            )
 
         _LOGGER.debug("Read operating data: %s", data)
         return data

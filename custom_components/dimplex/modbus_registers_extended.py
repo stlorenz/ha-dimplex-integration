@@ -1,66 +1,135 @@
-"""Extended Modbus register definitions for Dimplex heat pump integration.
+"""Extended Modbus register definitions for the Dimplex heat pump integration.
 
-This file contains additional register definitions beyond system status.
-Register addresses are based on Dimplex WPM III documentation.
+All addresses below are taken from the official Dimplex wiki
+"Modbus TCP - Datenpunktliste" (WPM Touch / NWPM Touch, software J/L/M)
+unless a definition says otherwise. Pages used (fetched 2026-11-08):
 
-Documentation references:
-- Operating Mode: https://dimplex.atlassian.net/wiki/spaces/DW/pages/.../Modbus+TCP+-+Betriebsmodus
-- Operating Data: https://dimplex.atlassian.net/wiki/spaces/DW/pages/.../Modbus+TCP+-+Betriebsdaten
-- Runtime Counters: https://dimplex.atlassian.net/wiki/spaces/DW/pages/.../Modbus+TCP+-+Laufzeiten
-- Heat and Energy: https://dimplex.atlassian.net/wiki/spaces/DW/pages/.../Modbus+TCP+-+Wärme-+und+Energiemengen
-- Inputs: https://dimplex.atlassian.net/wiki/spaces/DW/pages/.../Modbus+TCP+-+Eingänge
-- Outputs: https://dimplex.atlassian.net/wiki/spaces/DW/pages/.../Modbus+TCP+-+Ausgänge
-- Settings: https://dimplex.atlassian.net/wiki/spaces/DW/pages/.../Modbus+TCP+-+Einstellungen
+- Betriebsdaten:         https://dimplex.atlassian.net/wiki/spaces/DW/pages/3303571917
+- Betriebsmodus:         https://dimplex.atlassian.net/wiki/spaces/DW/pages/3303572150
+- Laufzeiten:            https://dimplex.atlassian.net/wiki/spaces/DW/pages/3341451265
+- Waerme-/Energiemengen: https://dimplex.atlassian.net/wiki/spaces/DW/pages/3341124281
+- Eingaenge (Coils):     https://dimplex.atlassian.net/wiki/spaces/DW/pages/3342204929
+- Ausgaenge (Coils):     https://dimplex.atlassian.net/wiki/spaces/DW/pages/3342205162
+- Einstellungen 1. HK:   https://dimplex.atlassian.net/wiki/spaces/DW/pages/3341090817
+- Einstellungen WW:      https://dimplex.atlassian.net/wiki/spaces/DW/pages/3303833834
+- Systemstatus:          https://dimplex.atlassian.net/wiki/spaces/DW/pages/3303833601
 
-Note: Register addresses follow Modbus convention (0-based addressing).
-Values are typically 16-bit signed/unsigned integers.
-Temperature values are in 0.1°C units (divide by 10).
-Pressure values are in 0.01 bar units (divide by 100).
-Energy values may span 2 registers (32-bit).
+Conventions
+-----------
+* Analogue datapoints are holding registers (FC03 read, FC06/FC16 write).
+* Digital inputs/outputs are coils (FC01 read only).
+* Temperatures in the operating data block are int16 in 0.1 degC steps.
+* Settings registers in the 5000 range are mostly whole degC / K (uint16).
+* Software version H exposes only the system status registers; every
+  extended datapoint is ``None`` for H.
+
+Datapoints marked ``EMPIRICAL`` are not in the wiki but were observed on a
+real device; they are read but should be re-checked with
+``scripts/validate_registers.py`` on new installations.
 """
+
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
-from collections.abc import Callable
 
 from .modbus_registers import SoftwareVersion
 
 
 @dataclass
 class RegisterDefinition:
-    """Definition of a Modbus register."""
-    
+    """Definition of a Modbus holding register datapoint."""
+
     address: int | None
     """Register address (None if not available for this software version)"""
-    
+
     scale: float = 1.0
-    """Scale factor to convert raw value to final value"""
-    
+    """Scale factor applied to the raw value (value = raw * scale + offset)"""
+
     signed: bool = True
-    """Whether the register value is signed"""
-    
+    """Whether the register value is two's complement"""
+
     size: int = 1
-    """Number of registers (1 = 16-bit, 2 = 32-bit)"""
-    
+    """Number of consecutive registers (1 = 16-bit, 2 = 32-bit, 3 = 12-digit)"""
+
     unit: str = ""
-    """Unit of the value after scaling"""
+    """Unit of the scaled value"""
 
     decoder: Callable[[list[int]], int | float | None] | None = None
     """Optional decoder for multi-register values (overrides default decoding)."""
 
+    offset: float = 0.0
+    """Offset added after scaling (used for e.g. parallel shift 0..38 -> -19..19)."""
+
+    min_value: float | None = None
+    """Documented minimum of the scaled value (None = not documented)."""
+
+    max_value: float | None = None
+    """Documented maximum of the scaled value (None = not documented)."""
+
+    writable: bool = False
+    """Whether the wiki documents the register as R/W."""
+
+    def to_raw(self, value: float) -> int:
+        """Convert a scaled value back to the raw register value."""
+        return int(round((value - self.offset) / self.scale))
+
+
+def _reg(
+    j_lm_address: int | None,
+    *,
+    scale: float = 1.0,
+    signed: bool = True,
+    size: int = 1,
+    unit: str = "",
+    decoder: Callable[[list[int]], int | float | None] | None = None,
+    offset: float = 0.0,
+    min_value: float | None = None,
+    max_value: float | None = None,
+    writable: bool = False,
+    lm_only: bool = False,
+) -> dict[SoftwareVersion, RegisterDefinition]:
+    """Build a J/L_M register map (H is never available for extended data)."""
+
+    def make(address: int | None) -> RegisterDefinition:
+        return RegisterDefinition(
+            address=address,
+            scale=scale,
+            signed=signed,
+            size=size,
+            unit=unit,
+            decoder=decoder,
+            offset=offset,
+            min_value=min_value,
+            max_value=max_value,
+            writable=writable,
+        )
+
+    return {
+        SoftwareVersion.H: make(None),
+        SoftwareVersion.J: make(None if lm_only else j_lm_address),
+        SoftwareVersion.L_M: make(j_lm_address),
+    }
+
+
+def _temp(address: int | None) -> dict[SoftwareVersion, RegisterDefinition]:
+    """Operating data temperature: int16, 0.1 degC."""
+    return _reg(address, scale=0.1, unit="°C", min_value=-50.0, max_value=150.0)
+
+
+def _coil(
+    j_lm_address: int | None, *, lm_only: bool = False
+) -> dict[SoftwareVersion, int | None]:
+    return {
+        SoftwareVersion.H: None,
+        SoftwareVersion.J: None if lm_only else j_lm_address,
+        SoftwareVersion.L_M: j_lm_address,
+    }
+
 
 class OperatingMode(IntEnum):
-    """Operating mode values for register 5015 (Betriebsmodus).
-
-    Documentation (WPM Software J/L/M):
-      0: Sommer
-      1: Winter
-      2: Urlaub
-      3: Party
-      4: 2. Wärmeerzeuger
-      5: Kühlen
-    """
+    """Operating mode values for register 5015 (Betriebsmodus), WPM J/L/M."""
 
     SUMMER = 0
     WINTER = 1
@@ -70,347 +139,153 @@ class OperatingMode(IntEnum):
     COOLING = 5
 
 
-# Operating Mode Registers (Betriebsmodus)
+OPERATING_MODE_KEYS: dict[int, str] = {
+    OperatingMode.SUMMER: "summer",
+    OperatingMode.WINTER: "winter",
+    OperatingMode.VACATION: "vacation",
+    OperatingMode.PARTY: "party",
+    OperatingMode.SECOND_HEAT_GENERATOR: "second_heat_generator",
+    OperatingMode.COOLING: "cooling",
+}
+
+
+# ---------------------------------------------------------------------------
+# Operating Mode (Betriebsmodus) - R/W
+# ---------------------------------------------------------------------------
 class OperatingModeRegisters:
-    """Operating mode register addresses.
-    
-    These registers control the operating mode of the heat pump.
+    """Operating mode registers (wiki "Modbus TCP - Betriebsmodus")."""
 
-    Note: The operating mode is a VALUE written to register 5015 (not a
-    software-version-specific "mode"). The register availability varies by
-    software version.
-    """
-
-    CURRENT_MODE = {
+    # Plain address maps, kept for climate.py / services.py.
+    CURRENT_MODE: dict[SoftwareVersion, int | None] = {
         SoftwareVersion.H: None,
-        SoftwareVersion.J: 5015,  # Betriebsmodus (R/W), values: see OperatingMode
-        SoftwareVersion.L_M: 5015,  # Betriebsmodus (R/W), values: see OperatingMode
+        SoftwareVersion.J: 5015,
+        SoftwareVersion.L_M: 5015,
+    }
+    PARTY_HOURS: dict[SoftwareVersion, int | None] = {
+        SoftwareVersion.H: None,
+        SoftwareVersion.J: 5016,
+        SoftwareVersion.L_M: 5016,
+    }
+    VACATION_DAYS: dict[SoftwareVersion, int | None] = {
+        SoftwareVersion.H: None,
+        SoftwareVersion.J: 5017,
+        SoftwareVersion.L_M: 5017,
+    }
+    VENTILATION_STAGE: dict[SoftwareVersion, int | None] = {
+        SoftwareVersion.H: None,
+        SoftwareVersion.J: 5034,
+        SoftwareVersion.L_M: 5034,
+    }
+    BOOST_VENTILATION_TIME: dict[SoftwareVersion, int | None] = {
+        # Documented at 127 ("Zeitwert Stosslueften", 15..90) although all
+        # other ventilation registers live in the 5000 range.
+        SoftwareVersion.H: None,
+        SoftwareVersion.J: 127,
+        SoftwareVersion.L_M: 127,
     }
 
-    PARTY_HOURS = {
-        SoftwareVersion.H: None,
-        SoftwareVersion.J: 5016,  # Anzahl Partystunden (0..72) [hour]
-        SoftwareVersion.L_M: 5016,  # Anzahl Partystunden (0..72) [hour]
-    }
-
-    VACATION_DAYS = {
-        SoftwareVersion.H: None,
-        SoftwareVersion.J: 5017,  # Anzahl Urlaubstage (0..150) [day]
-        SoftwareVersion.L_M: 5017,  # Anzahl Urlaubstage (0..150) [day]
-    }
-
-    VENTILATION_STAGE = {
-        SoftwareVersion.H: None,
-        SoftwareVersion.J: 5034,  # Lüftung Stufen (0..5)
-        SoftwareVersion.L_M: 5034,  # Lüftung Stufen (0..5)
-    }
-
-    BOOST_VENTILATION_TIME = {
-        # UNVERIFIED: address 127 is suspicious; all other Lüftung registers sit
-        # in the 5000-range. Likely a transcription error from the docs.
-        SoftwareVersion.H: None,
-        SoftwareVersion.J: 127,  # Zeitwert Stoßlüften (15..90) — UNVERIFIED
-        SoftwareVersion.L_M: 127,  # Zeitwert Stoßlüften (15..90) — UNVERIFIED
-    }
+    # Full definitions (with documented ranges) for the datapoint reader.
+    OPERATING_MODE = _reg(5015, signed=False, min_value=0, max_value=5, writable=True)
+    PARTY_HOURS_DEF = _reg(
+        5016, signed=False, unit="h", min_value=0, max_value=72, writable=True
+    )
+    VACATION_DAYS_DEF = _reg(
+        5017, signed=False, unit="d", min_value=0, max_value=150, writable=True
+    )
 
 
-# Operating Data Registers (Betriebsdaten)
-# These are the main measurement registers for temperatures, pressures, etc.
+# ---------------------------------------------------------------------------
+# Operating Data (Betriebsdaten) - read only, int16, 0.1 degC
+# ---------------------------------------------------------------------------
 class OperatingDataRegisters:
-    """Operating data register addresses - temperatures, pressures, etc.
-    
-    Temperature values are stored in 0.1°C units.
-    Pressure values are stored in 0.01 bar units.
+    """Operating data (wiki "Modbus TCP - Betriebsdaten").
+
+    Wiki mapping (register: name):
+      1 Aussentemperatur (R1)         2 Temperatur Ruecklauf (R2)
+      3 Temperatur Warmwasser (R3)    5 Temperatur Vorlauf (R9)
+      6 WQ-Eintritt (R24)             7 WQ-Austritt (R6)
+      9 Temperatur 2. Heizkreis (R5)  10 Temperatur 3. Heizkreis (R13)
+      11 Raumtemperatur 1             12 Raumtemperatur 2
+      13 Raumfeuchte 1                14 Raumfeuchte 2
+      19 Vorlauf passiv Kuehlen (R11) 20 Ruecklauf passiv Kuehlen (R4)
+      21 Ruecklauf Primaerkreis (R24) 23 Solarspeicher (R22)
+      53 Ruecklaufsoll                54 Soll 2. HK   55 Soll 3. HK
+      58 Warmwassersoll
+
+    NOTE on 5 vs 9: commit 0de5697 had swapped these to 9 = flow / 5 = HC2
+    after a reading taken while the compressor was off. Verified on
+    2026-11-09 on an LA 1422C with the compressor running: reg 5 = 37.7 degC
+    (3.8 K above the return of 33.9 degC) and reg 9 = 25.2 degC (mixed
+    floor-heating circuit 2, below the return). The wiki mapping is correct:
+    5 = Vorlauf, 9 = 2. Heizkreis.
+
+    Unfitted probes read exactly 0 (heat source in/out on an air unit, HC3,
+    room sensors, humidity, passive cooling, solar); the sensor platform
+    skips those entities.
     """
 
-    # Temperature Sensors (in 0.1°C units, signed)
-    FLOW_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        # Temperatur Vorlauf (R9)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=9, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=9, scale=0.1, unit="°C"),
-    }
+    OUTSIDE_TEMPERATURE = _temp(1)
+    RETURN_TEMPERATURE = _temp(2)
+    HOT_WATER_TEMPERATURE = _temp(3)
+    FLOW_TEMPERATURE = _temp(5)  # Temperatur Vorlauf (R9)
+    HEAT_SOURCE_INLET_TEMP = _temp(6)
+    HEAT_SOURCE_OUTLET_TEMP = _temp(7)
+    HC2_TEMPERATURE = _temp(9)  # Temperatur 2. Heizkreis (R5)
+    HC3_TEMPERATURE = _temp(10)
+    ROOM_TEMPERATURE = _temp(11)
+    ROOM_TEMPERATURE_2 = _temp(12)
+    ROOM_HUMIDITY = _reg(13, scale=0.1, unit="%", min_value=0, max_value=100)
+    ROOM_HUMIDITY_2 = _reg(14, scale=0.1, unit="%", min_value=0, max_value=100)
+    PASSIVE_COOLING_FLOW_TEMP = _temp(19)
+    PASSIVE_COOLING_RETURN_TEMP = _temp(20)
+    PRIMARY_CIRCUIT_RETURN_TEMP = _temp(21)
+    SOLAR_STORAGE_TEMPERATURE = _temp(23)
 
-    RETURN_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        # Temperatur Ruecklauf (R2)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=2, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=2, scale=0.1, unit="°C"),
-    }
+    RETURN_SETPOINT = _temp(53)
+    HC2_SETPOINT = _temp(54)
+    HC3_SETPOINT = _temp(55)
+    HOT_WATER_SETPOINT = _temp(58)
+    # Not documented in the wiki; kept for API compatibility (never read).
+    FLOW_SETPOINT = _temp(None)
 
-    OUTSIDE_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        # Außentemperatur (R1)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=1, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=1, scale=0.1, unit="°C"),
-    }
-
-    HOT_WATER_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        # Temperatur Warmwasser (R3)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=3, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=3, scale=0.1, unit="°C"),
-    }
-
-    HEAT_SOURCE_INLET_TEMP: dict[SoftwareVersion, RegisterDefinition] = {
-        # Temperatur Wärmequelleneintritt (R24)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=6, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=6, scale=0.1, unit="°C"),
-    }
-
-    HEAT_SOURCE_OUTLET_TEMP: dict[SoftwareVersion, RegisterDefinition] = {
-        # Temperatur Wärmequellenaustritt (R6)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=7, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=7, scale=0.1, unit="°C"),
-    }
-
-    ROOM_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        # Raumtemperatur 1 / RT-RTH Econ
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=11, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=11, scale=0.1, unit="°C"),
-    }
-
-    # Setpoints (in 0.1°C units)
-    FLOW_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
-        # Flow setpoint is not in the snippet; keep unknown until documented.
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=None),
-        SoftwareVersion.L_M: RegisterDefinition(address=None),
-    }
-
-    HOT_WATER_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
-        # Temperatur Warmwassersoll
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=58, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=58, scale=0.1, unit="°C"),
-    }
-
-    RETURN_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
-        # Temperatur Rücklaufsoll
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=53, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=53, scale=0.1, unit="°C"),
-    }
-
-    HC2_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
-        # Solltemperatur 2.Heizkreis
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=54, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=54, scale=0.1, unit="°C"),
-    }
-
-    HC3_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
-        # Solltemperatur 3.Heizkreis
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=55, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=55, scale=0.1, unit="°C"),
-    }
-
-    HC2_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        # Temperatur 2.Heizkreis (R5)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=5, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=5, scale=0.1, unit="°C"),
-    }
-
-    HC3_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        # Temperatur 3.Heizkreis (R13)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=10, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=10, scale=0.1, unit="°C"),
-    }
-
-    ROOM_TEMPERATURE_2: dict[SoftwareVersion, RegisterDefinition] = {
-        # Raumtemperatur 2
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=12, scale=0.1, unit="°C"),
-        SoftwareVersion.L_M: RegisterDefinition(address=12, scale=0.1, unit="°C"),
-    }
-
-    # Additional temperature sensors for refrigerant circuit (diagnostic)
-    # UNVERIFIED: addresses 20-23 assumed identical across H/J/L_M. No empirical
-    # confirmation; readings may be unreliable until checked against the WPM UI.
-    EVAPORATOR_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=20, scale=0.1, unit="°C"),  # UNVERIFIED
-        SoftwareVersion.J: RegisterDefinition(address=20, scale=0.1, unit="°C"),  # UNVERIFIED
-        SoftwareVersion.L_M: RegisterDefinition(address=20, scale=0.1, unit="°C"),  # UNVERIFIED
-    }
-
-    CONDENSER_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=21, scale=0.1, unit="°C"),  # UNVERIFIED
-        SoftwareVersion.J: RegisterDefinition(address=21, scale=0.1, unit="°C"),  # UNVERIFIED
-        SoftwareVersion.L_M: RegisterDefinition(address=21, scale=0.1, unit="°C"),  # UNVERIFIED
-    }
-
-    SUCTION_GAS_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=22, scale=0.1, unit="°C"),  # UNVERIFIED
-        SoftwareVersion.J: RegisterDefinition(address=22, scale=0.1, unit="°C"),  # UNVERIFIED
-        SoftwareVersion.L_M: RegisterDefinition(address=22, scale=0.1, unit="°C"),  # UNVERIFIED
-    }
-
-    DISCHARGE_GAS_TEMPERATURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=23, scale=0.1, unit="°C"),  # UNVERIFIED
-        SoftwareVersion.J: RegisterDefinition(address=23, scale=0.1, unit="°C"),  # UNVERIFIED
-        SoftwareVersion.L_M: RegisterDefinition(address=23, scale=0.1, unit="°C"),  # UNVERIFIED
-    }
-
-    # Pressure sensors
-    # High Pressure (condensation pressure)
-    HIGH_PRESSURE: dict[SoftwareVersion, RegisterDefinition] = {
-        # Empirically verified on WPM Touch (J/L/M): reg 8 reports ~22.6 bar as 226 -> 0.1 bar steps.
-        SoftwareVersion.H: RegisterDefinition(address=30, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
-        SoftwareVersion.J: RegisterDefinition(address=8, scale=0.1, unit="bar", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=8, scale=0.1, unit="bar", signed=False),
-    }
-
-    # Low Pressure (evaporation pressure)
-    LOW_PRESSURE: dict[SoftwareVersion, RegisterDefinition] = {
-        # Candidate on WPM Touch (J/L/M): reg 101 shows value 55 when UI shows 5.5 bar -> 0.1 bar steps.
-        SoftwareVersion.H: RegisterDefinition(address=31, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
-        SoftwareVersion.J: RegisterDefinition(address=101, scale=0.1, unit="bar", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=101, scale=0.1, unit="bar", signed=False),
-    }
-
-    # Brine circuit pressure (for ground source heat pumps)
-    # UNVERIFIED: address 32 & 0.01 scale are placeholder guesses, never confirmed
-    # against a brine system. High/Low pressure scaling on J/L_M turned out to be 0.1,
-    # so 0.01 here is also suspicious.
-    BRINE_PRESSURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=32, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
-        SoftwareVersion.J: RegisterDefinition(address=32, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
-        SoftwareVersion.L_M: RegisterDefinition(address=32, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
-    }
-
-    # Heating water system pressure
-    # UNVERIFIED: address 33 & 0.01 scale are placeholder guesses.
-    WATER_PRESSURE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=33, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
-        SoftwareVersion.J: RegisterDefinition(address=33, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
-        SoftwareVersion.L_M: RegisterDefinition(address=33, scale=0.01, unit="bar", signed=False),  # UNVERIFIED
-    }
+    # Pressures are NOT part of the wiki datapoint list. EMPIRICAL on an
+    # LA 1422C / WPM Touch: reg 8 = 226 while the display showed 22.6 bar
+    # (high pressure), reg 101 = 55 while the display showed 5.5 bar (low
+    # pressure). Treated as 0.1 bar, unsigned.
+    HIGH_PRESSURE = _reg(
+        8, scale=0.1, unit="bar", signed=False, min_value=0, max_value=60
+    )
+    LOW_PRESSURE = _reg(
+        101, scale=0.1, unit="bar", signed=False, min_value=0, max_value=60
+    )
 
 
-# Runtime Counters (Laufzeiten)
+# ---------------------------------------------------------------------------
+# Runtime counters (Laufzeiten) - uint16 hours, read only
+# ---------------------------------------------------------------------------
 class RuntimeRegisters:
-    """Runtime counter register addresses.
-    
-    Runtime values are typically in hours.
-    Counter values are unitless (number of starts/cycles).
-    Large values may use 2 registers (32-bit).
-    """
+    """Runtime counters (wiki "Modbus TCP - Laufzeiten")."""
 
-    # Runtime / counter values are unsigned (default signed=True would flip
-    # the sign once the count exceeds 2^31, which happens for long-running
-    # installs).
-    COMPRESSOR_RUNTIME_TOTAL: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=50, scale=1.0, unit="h", size=2, signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=50, scale=1.0, unit="h", size=2, signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=50, scale=1.0, unit="h", size=2, signed=False),
-    }
-
-    COMPRESSOR_STARTS: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=52, scale=1.0, unit="", size=2, signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=52, scale=1.0, unit="", size=2, signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=52, scale=1.0, unit="", size=2, signed=False),
-    }
-
-    HEATING_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=54, scale=1.0, unit="h", size=2, signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=54, scale=1.0, unit="h", size=2, signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=54, scale=1.0, unit="h", size=2, signed=False),
-    }
-
-    HOT_WATER_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=56, scale=1.0, unit="h", size=2, signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=56, scale=1.0, unit="h", size=2, signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=56, scale=1.0, unit="h", size=2, signed=False),
-    }
-
-    COOLING_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=58, scale=1.0, unit="h", size=2, signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=58, scale=1.0, unit="h", size=2, signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=58, scale=1.0, unit="h", size=2, signed=False),
-    }
-
-    AUXILIARY_HEATER_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=60, scale=1.0, unit="h", size=2, signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=60, scale=1.0, unit="h", size=2, signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=60, scale=1.0, unit="h", size=2, signed=False),
-    }
-
-    DEFROST_CYCLES: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=62, scale=1.0, unit="", size=2, signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=62, scale=1.0, unit="", size=2, signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=62, scale=1.0, unit="", size=2, signed=False),
-    }
-
-    # Per-component runtimes (WPM software J/L/M): uint16 hours
-    COMPRESSOR_1_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=72, scale=1.0, unit="h", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=72, scale=1.0, unit="h", signed=False),
-    }
-    COMPRESSOR_2_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=73, scale=1.0, unit="h", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=73, scale=1.0, unit="h", signed=False),
-    }
-    PRIMARY_PUMP_FAN_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        # Primärpumpe / Ventilator (M11)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=74, scale=1.0, unit="h", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=74, scale=1.0, unit="h", signed=False),
-    }
-    SECOND_HEAT_GENERATOR_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        # 2. Wärmeerzeuger (E10)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=75, scale=1.0, unit="h", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=75, scale=1.0, unit="h", signed=False),
-    }
-    HEATING_PUMP_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        # Heizungspumpe (M13)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=76, scale=1.0, unit="h", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=76, scale=1.0, unit="h", signed=False),
-    }
-    HOT_WATER_PUMP_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        # Warmwasserpumpe (M18)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=77, scale=1.0, unit="h", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=77, scale=1.0, unit="h", signed=False),
-    }
-    IMMERSION_HEATER_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        # Flanschheizung (E9)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=78, scale=1.0, unit="h", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=78, scale=1.0, unit="h", signed=False),
-    }
-    POOL_PUMP_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        # Schwimmbadpumpe (M19)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=79, scale=1.0, unit="h", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=79, scale=1.0, unit="h", signed=False),
-    }
-    AUX_CIRC_PUMP_RUNTIME: dict[SoftwareVersion, RegisterDefinition] = {
-        # Zusatzumwälzpumpe (M16) - documented "ab L12"
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=None),
-        SoftwareVersion.L_M: RegisterDefinition(address=71, scale=1.0, unit="h", signed=False),
-    }
+    COMPRESSOR_1_RUNTIME = _reg(72, signed=False, unit="h", min_value=0)
+    COMPRESSOR_2_RUNTIME = _reg(73, signed=False, unit="h", min_value=0)
+    PRIMARY_PUMP_FAN_RUNTIME = _reg(74, signed=False, unit="h", min_value=0)  # M11
+    SECOND_HEAT_GENERATOR_RUNTIME = _reg(75, signed=False, unit="h", min_value=0)  # E10
+    HEATING_PUMP_RUNTIME = _reg(76, signed=False, unit="h", min_value=0)  # M13
+    HOT_WATER_PUMP_RUNTIME = _reg(77, signed=False, unit="h", min_value=0)  # M18
+    IMMERSION_HEATER_RUNTIME = _reg(78, signed=False, unit="h", min_value=0)  # E9
+    POOL_PUMP_RUNTIME = _reg(79, signed=False, unit="h", min_value=0)  # M19
+    # Zusatzumwaelzpumpe (M16), documented "ab L12" -> L/M only.
+    AUX_CIRC_PUMP_RUNTIME = _reg(71, signed=False, unit="h", min_value=0, lm_only=True)
 
 
 def decode_digits_12(registers: list[int]) -> int | None:
     """Decode a 12-digit counter split across 3 uint16 registers.
 
-    Dimplex documentation often labels these as "1-4 / 5-8 / 9-12" and the
-    datapoint type is uint16. In practice, each register contains a 4-digit
-    *decimal chunk* (0..9999), not BCD nibbles.
+    The wiki labels the words "1-4", "5-8" and "9-12" and gives the formula
 
-    The 3 registers form a base-10,000 number:
-      value = (reg_9_12 * 10^8) + (reg_5_8 * 10^4) + reg_1_4
+        value = (reg_9_12 * 100000000) + (reg_5_8 * 10000) + reg_1_4
+
+    i.e. each word holds a 4-digit decimal chunk (0..9999), not BCD nibbles.
     """
     if len(registers) < 3:
         return None
@@ -422,258 +297,282 @@ def decode_digits_12(registers: list[int]) -> int | None:
     return (high * 100_000_000) + (mid * 10_000) + low
 
 
-# Heat and Energy Quantities (Wärme- und Energiemengen)
+def _energy_12(address: int) -> dict[SoftwareVersion, RegisterDefinition]:
+    return _reg(
+        address,
+        unit="kWh",
+        signed=False,
+        size=3,
+        decoder=decode_digits_12,
+        min_value=0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Heat and energy quantities (Waerme- und Energiemengen, Leistungen)
+# ---------------------------------------------------------------------------
 class EnergyRegisters:
-    """Energy and heat quantity register addresses.
-    
-    Power values are in Watts.
-    Energy values are in kWh (may use 2 registers for 32-bit values).
+    """Power and energy datapoints.
+
+    Heat quantities are only available on heat pumps with an integrated heat
+    meter or the external WMZ 25/32 meter and are not suitable for billing.
     """
 
-    # Current power consumption (electrical input power)
-    #
-    # Docs (WPM software J/L/M, "Leistungen und Überschuss"):
-    # - Leist_Elekt: 5170, unit W/10
-    #
-    # In practice this means the raw int16 value is in 10 W steps:
-    #   watts = raw * 10
-    CURRENT_POWER_CONSUMPTION: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=5170, scale=10.0, unit="W", signed=True),
-        SoftwareVersion.L_M: RegisterDefinition(address=5170, scale=10.0, unit="W", signed=True),
-    }
+    # "Leistungen und Ueberschuss" (WPM J/L/M): raw value in 10 W steps.
+    CURRENT_POWER_CONSUMPTION = _reg(
+        5170, scale=10.0, unit="W", min_value=0, max_value=100_000
+    )
+    CURRENT_HEATING_POWER = _reg(
+        5168, scale=10.0, unit="W", min_value=0, max_value=200_000
+    )
+    PV_SURPLUS = _reg(5182, scale=10.0, unit="W", writable=True)
 
-    # Current heating power (thermal output power)
-    #
-    # Docs (WPM software J/L/M, "Leistungen und Überschuss"):
-    # - Leist_Heiz: 5168, unit W/10
-    #
-    # In practice this means the raw int16 value is in 10 W steps:
-    #   watts = raw * 10
-    CURRENT_HEATING_POWER: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=5168, scale=10.0, unit="W", signed=True),
-        SoftwareVersion.L_M: RegisterDefinition(address=5168, scale=10.0, unit="W", signed=True),
-    }
-
-    # PV surplus (Smart Grid) - value is currently only recorded, no function behind it
-    # Docs (WPM software J/L/M):
-    # - PV_Ueberschuss: 5182, unit W/10, R/W
-    #
-    # Same scaling as above:
-    #   watts = raw * 10
-    PV_SURPLUS: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=5182, scale=10.0, unit="W", signed=True),
-        SoftwareVersion.L_M: RegisterDefinition(address=5182, scale=10.0, unit="W", signed=True),
-    }
-
-    # Total electrical energy consumed (kWh, 32-bit)
-    TOTAL_ENERGY_CONSUMED: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=80, scale=0.1, unit="kWh", size=2, signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=80, scale=0.1, unit="kWh", size=2, signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=80, scale=0.1, unit="kWh", size=2, signed=False),
-    }
-
-    # Total thermal energy generated (kWh, 32-bit)
-    TOTAL_HEAT_GENERATED: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=82, scale=0.1, unit="kWh", size=2, signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=82, scale=0.1, unit="kWh", size=2, signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=82, scale=0.1, unit="kWh", size=2, signed=False),
-    }
-
-    # NOTE: Heat quantity counters on WPM J/L/M are exposed as 12-digit counters split
-    # into 3x uint16 words ("1-4", "5-8", "9-12") where each nibble is a BCD digit.
-    # Example: [0x0000, 0x0123, 0x4567] => "000001234567" kWh.
-    #
-    # Documentation snippet (WPM J/L/M):
-    # - Wärmemenge Heizen 1-4: 5096
-    # - Wärmemenge Heizen 5-8: 5097
-    # - Wärmemenge Heizen 9-12: 5098
-    #
-    # - Wärmemenge Warmwasser 1-4: 5099
-    # - Wärmemenge Warmwasser 5-8: 5100
-    # - Wärmemenge Warmwasser 9-12: 5101
-    #
-    # - Wärmemenge Schwimmbad 1-4: 5102
-    # - Wärmemenge Schwimmbad 5-8: 5103
-    # - Wärmemenge Schwimmbad 9-12: 5104
-    #
-    # - Umweltenergie 1-4: 5127
-    # - Umweltenergie 5-8: 5128
-    # - Umweltenergie 9-12: 5129
-    #
-    # Heating energy (kWh, 12-digit BCD across 3 registers on J/L/M)
-    HEATING_ENERGY: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(
-            address=5096, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
-        ),
-        SoftwareVersion.L_M: RegisterDefinition(
-            address=5096, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
-        ),
-    }
-
-    # Hot water energy (kWh, 12-digit BCD across 3 registers on J/L/M)
-    HOT_WATER_ENERGY: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(
-            address=5099, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
-        ),
-        SoftwareVersion.L_M: RegisterDefinition(
-            address=5099, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
-        ),
-    }
-
-    # Cooling energy (kWh, 32-bit)
-    COOLING_ENERGY: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=88, scale=0.1, unit="kWh", size=2, signed=False),
-        SoftwareVersion.J: RegisterDefinition(address=88, scale=0.1, unit="kWh", size=2, signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=88, scale=0.1, unit="kWh", size=2, signed=False),
-    }
-
-    # Pool energy (kWh, 12-digit BCD across 3 registers on J/L/M)
-    POOL_ENERGY: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(
-            address=5102, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
-        ),
-        SoftwareVersion.L_M: RegisterDefinition(
-            address=5102, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
-        ),
-    }
-
-    # Environmental/source energy (kWh, 12-digit BCD across 3 registers on J/L/M)
-    ENVIRONMENTAL_ENERGY: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(
-            address=5127, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
-        ),
-        SoftwareVersion.L_M: RegisterDefinition(
-            address=5127, scale=1.0, unit="kWh", size=3, signed=False, decoder=decode_digits_12
-        ),
-    }
+    HEATING_ENERGY = _energy_12(5096)
+    HOT_WATER_ENERGY = _energy_12(5099)
+    POOL_ENERGY = _energy_12(5102)
+    ENVIRONMENTAL_ENERGY = _energy_12(5127)
 
 
-# Input/Output States
-class IORegisters:
-    """Digital input and output register addresses."""
+# ---------------------------------------------------------------------------
+# Digital inputs / outputs - COILS (FC01), read only
+# ---------------------------------------------------------------------------
+class InputCoils:
+    """Digital inputs (wiki "Modbus TCP - Eingaenge"), J/L/M."""
 
-    # Binary inputs
-    EXTERNAL_LOCK_INPUT: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=None),
-        SoftwareVersion.L_M: RegisterDefinition(address=90),
-    }
-
-    EVU_LOCK_INPUT: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=None),
-        SoftwareVersion.L_M: RegisterDefinition(address=91),
-    }
-
-    # Binary outputs
-    COMPRESSOR_OUTPUT: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=None),
-        SoftwareVersion.L_M: RegisterDefinition(address=92),
-    }
-
-    CIRCULATION_PUMP_OUTPUT: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=None),
-        SoftwareVersion.L_M: RegisterDefinition(address=93),
-    }
-
-    AUXILIARY_HEATER_OUTPUT: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=None),
-        SoftwareVersion.L_M: RegisterDefinition(address=94),
-    }
+    SMART_GRID_1 = _coil(3)
+    SMART_GRID_2 = _coil(4)
+    EVU_LOCK = _coil(5)
+    EXTERNAL_LOCK = _coil(6)
 
 
-# Settings Registers (Read/Write)
+class OutputCoils:
+    """Digital outputs (wiki "Modbus TCP - Ausgaenge"), J/L (and M)."""
+
+    COMPRESSOR_1 = _coil(41)
+    COMPRESSOR_2 = _coil(42)
+    PRIMARY_PUMP_FAN = _coil(43)  # M11 / Ventilator M2
+    SECOND_HEAT_GENERATOR = _coil(44)  # E10
+    HEATING_PUMP_M13 = _coil(45)
+    HOT_WATER_PUMP = _coil(46)  # M18
+    MIXER_M21_OPEN = _coil(47)
+    MIXER_M21_CLOSE = _coil(48)
+    AUX_CIRC_PUMP = _coil(49)  # M16
+    FLANGE_HEATER = _coil(50)  # E9
+    HEATING_PUMP_M15 = _coil(51)
+    MIXER_M22_OPEN = _coil(52)
+    MIXER_M22_CLOSE = _coil(53)
+    POOL_PUMP = _coil(56)  # M19
+    COLLECTIVE_FAULT = _coil(57)  # H5
+    HEATING_PUMP_M14 = _coil(59)
+    COOLING_PUMP = _coil(60)  # M17
+    HEATING_PUMP_M20 = _coil(61)
+    ROOM_THERMOSTAT_COOLING = _coil(66)  # N9 Umschaltung Heizen/Kuehlen
+    PRIMARY_PUMP_COOLING = _coil(68)  # M12
+    SOLAR_PUMP = _coil(71)  # M23
+
+
+# Coil blocks read in one request each: (first address, count)
+INPUT_COIL_BLOCK: tuple[int, int] = (3, 4)
+OUTPUT_COIL_BLOCK: tuple[int, int] = (41, 31)
+
+
+# ---------------------------------------------------------------------------
+# Settings (Einstellungen) - R/W holding registers
+# ---------------------------------------------------------------------------
 class SettingsRegisters:
-    """Settings register addresses - many are read/write."""
+    """Writable settings.
 
-    # Heating Circuit 1
-    # UNVERIFIED: addresses 200-202 are placeholders from the initial
-    # implementation and have never been confirmed against the Dimplex wiki
-    # ("Modbus TCP - Einstellungen 1. Heiz-/Kühlkreis"). Do not rely on them.
-    HC1_COMFORT_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=None),
-        SoftwareVersion.L_M: RegisterDefinition(address=200, scale=0.1, unit="°C"),
-    }
+    Hot water block verified against the wiki and on an LA 1422C (WPM L/M):
+    reading 5046..5048 returned [-25, 45, 60] with WW-Soll 45 / WW-Max 60,
+    writing 48 to 5047 was accepted. Whole degC / K, uint16.
+    """
 
-    HC1_REDUCED_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=None),
-        SoftwareVersion.L_M: RegisterDefinition(address=201, scale=0.1, unit="°C"),
-    }
+    # --- Heating circuit 1 (wiki "Einstellungen 1. Heiz-/Kuehlkreis") ---
+    # Raumtemperatur (room setpoint), 150..300 in 0.1 degC -> 15.0..30.0 degC
+    HC1_ROOM_SETPOINT = _reg(
+        46,
+        scale=0.1,
+        unit="°C",
+        signed=False,
+        min_value=15.0,
+        max_value=30.0,
+        writable=True,
+    )
+    # Parallelverschiebung: raw 0..38 -> -19..+19 K (raw 19 = 0 K)
+    HC1_PARALLEL_SHIFT = _reg(
+        5036,
+        unit="K",
+        signed=False,
+        offset=-19.0,
+        min_value=-19,
+        max_value=19,
+        writable=True,
+    )
+    # Festwertsolltemperatur 18..60 degC
+    HC1_FIXED_SETPOINT = _reg(
+        5037, unit="°C", signed=False, min_value=18, max_value=60, writable=True
+    )
+    # Heizkurvenendpunkt 20..70 degC
+    HC1_HEATING_CURVE_ENDPOINT = _reg(
+        5038, unit="°C", signed=False, min_value=20, max_value=70, writable=True
+    )
+    # Hysterese 5..50 in 0.1 K -> 0.5..5.0 K
+    HC1_HYSTERESIS = _reg(
+        47,
+        scale=0.1,
+        unit="K",
+        signed=False,
+        min_value=0.5,
+        max_value=5.0,
+        writable=True,
+    )
+    # Solltemperatur dynamische Kuehlung (bis L22.9) / bei 15 degC AT (ab L22.9)
+    HC1_COOLING_SETPOINT = _reg(
+        5043, unit="°C", signed=False, min_value=10, max_value=35, writable=True
+    )
+    # Solltemperatur dyn. Kuehlung bei 30 degC AT (ab L22.9) -> L/M only
+    HC1_COOLING_SETPOINT_30 = _reg(
+        5134,
+        unit="°C",
+        signed=False,
+        min_value=10,
+        max_value=35,
+        writable=True,
+        lm_only=True,
+    )
 
-    HC1_HEATING_CURVE: dict[SoftwareVersion, RegisterDefinition] = {
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=None),
-        SoftwareVersion.L_M: RegisterDefinition(address=202, scale=0.01, unit=""),
-    }
+    # --- Hot water (wiki "Einstellungen Warmwasser") ---
+    HOT_WATER_COMFORT_SETPOINT = _reg(
+        5047, unit="°C", signed=False, min_value=10, max_value=85, writable=True
+    )
+    HOT_WATER_MAX_SETPOINT = _reg(
+        5048, unit="°C", signed=False, min_value=10, max_value=85, writable=True
+    )
+    HOT_WATER_MIN_SETPOINT = _reg(
+        5145, unit="°C", signed=False, min_value=10, max_value=85, writable=True
+    )
+    HOT_WATER_HYSTERESIS = _reg(
+        5045, unit="K", signed=False, min_value=2, max_value=15, writable=True
+    )
+    # The WPM has no separate "reduced" hot water setpoint register; the
+    # reduction is realised via the time programme. Kept for API compatibility.
+    HOT_WATER_REDUCED_SETPOINT = _reg(None)
 
-    # Hot Water (Einstellungen Warmwasser)
-    # Verified against Dimplex wiki "Modbus TCP - Einstellungen Warmwasser"
-    # (WPM software J/L/M) and empirically on an LA 1422C / WPM Touch (L/M):
-    # reading 5046..5048 returned [-25, 45, 60] with WW-Soll 45 °C / WW-Max 60 °C,
-    # writing 48 to 5047 was accepted by the WPM. Values are whole °C / K
-    # (uint16, scale 1), NOT 0.1 °C like the operating-data temperatures.
-    HOT_WATER_COMFORT_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
-        # Solltemperatur (R/W, range: Solltemp. Min. .. 85 °C)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=5047, scale=1.0, unit="°C", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=5047, scale=1.0, unit="°C", signed=False),
-    }
 
-    HOT_WATER_REDUCED_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
-        # The WPM has no separate "reduced" hot water setpoint register; the
-        # night/day reduction is realised via the WPM time programme as an
-        # offset on the setpoint. Kept for API compatibility, never available.
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=None),
-        SoftwareVersion.L_M: RegisterDefinition(address=None),
-    }
+# ---------------------------------------------------------------------------
+# Datapoint registry: data key -> register map. The Modbus client reads every
+# entry that has an address for the active software version, the sensor
+# platform uses it to skip entities that can never have data, and the
+# validation script uses it to check real devices.
+# ---------------------------------------------------------------------------
+REGISTER_DATAPOINTS: dict[str, dict[SoftwareVersion, RegisterDefinition]] = {
+    # Operating data
+    "outside_temperature": OperatingDataRegisters.OUTSIDE_TEMPERATURE,
+    "return_temperature": OperatingDataRegisters.RETURN_TEMPERATURE,
+    "hot_water_temperature": OperatingDataRegisters.HOT_WATER_TEMPERATURE,
+    "flow_temperature": OperatingDataRegisters.FLOW_TEMPERATURE,
+    "heat_source_inlet_temperature": OperatingDataRegisters.HEAT_SOURCE_INLET_TEMP,
+    "heat_source_outlet_temperature": OperatingDataRegisters.HEAT_SOURCE_OUTLET_TEMP,
+    "hc2_temperature": OperatingDataRegisters.HC2_TEMPERATURE,
+    "hc3_temperature": OperatingDataRegisters.HC3_TEMPERATURE,
+    "room_temperature": OperatingDataRegisters.ROOM_TEMPERATURE,
+    "room_temperature_2": OperatingDataRegisters.ROOM_TEMPERATURE_2,
+    "room_humidity": OperatingDataRegisters.ROOM_HUMIDITY,
+    "room_humidity_2": OperatingDataRegisters.ROOM_HUMIDITY_2,
+    "passive_cooling_flow_temperature": OperatingDataRegisters.PASSIVE_COOLING_FLOW_TEMP,
+    "passive_cooling_return_temperature": OperatingDataRegisters.PASSIVE_COOLING_RETURN_TEMP,
+    "primary_circuit_return_temperature": OperatingDataRegisters.PRIMARY_CIRCUIT_RETURN_TEMP,
+    "solar_storage_temperature": OperatingDataRegisters.SOLAR_STORAGE_TEMPERATURE,
+    "return_setpoint": OperatingDataRegisters.RETURN_SETPOINT,
+    "hc2_setpoint": OperatingDataRegisters.HC2_SETPOINT,
+    "hc3_setpoint": OperatingDataRegisters.HC3_SETPOINT,
+    "hot_water_setpoint": OperatingDataRegisters.HOT_WATER_SETPOINT,
+    "flow_setpoint": OperatingDataRegisters.FLOW_SETPOINT,
+    "high_pressure": OperatingDataRegisters.HIGH_PRESSURE,
+    "low_pressure": OperatingDataRegisters.LOW_PRESSURE,
+    # Operating mode
+    "operating_mode_code": OperatingModeRegisters.OPERATING_MODE,
+    "party_hours": OperatingModeRegisters.PARTY_HOURS_DEF,
+    "vacation_days": OperatingModeRegisters.VACATION_DAYS_DEF,
+    # Power / energy
+    "current_power_consumption": EnergyRegisters.CURRENT_POWER_CONSUMPTION,
+    "current_heating_power": EnergyRegisters.CURRENT_HEATING_POWER,
+    "pv_surplus": EnergyRegisters.PV_SURPLUS,
+    "heating_energy": EnergyRegisters.HEATING_ENERGY,
+    "hot_water_energy": EnergyRegisters.HOT_WATER_ENERGY,
+    "pool_energy": EnergyRegisters.POOL_ENERGY,
+    "environmental_energy": EnergyRegisters.ENVIRONMENTAL_ENERGY,
+    # Runtimes
+    "compressor_1_runtime": RuntimeRegisters.COMPRESSOR_1_RUNTIME,
+    "compressor_2_runtime": RuntimeRegisters.COMPRESSOR_2_RUNTIME,
+    "primary_pump_fan_runtime": RuntimeRegisters.PRIMARY_PUMP_FAN_RUNTIME,
+    "second_heat_generator_runtime": RuntimeRegisters.SECOND_HEAT_GENERATOR_RUNTIME,
+    "heating_pump_runtime": RuntimeRegisters.HEATING_PUMP_RUNTIME,
+    "hot_water_pump_runtime": RuntimeRegisters.HOT_WATER_PUMP_RUNTIME,
+    "immersion_heater_runtime": RuntimeRegisters.IMMERSION_HEATER_RUNTIME,
+    "pool_pump_runtime": RuntimeRegisters.POOL_PUMP_RUNTIME,
+    "aux_circ_pump_runtime": RuntimeRegisters.AUX_CIRC_PUMP_RUNTIME,
+    # Settings (read back so number entities show the device value)
+    "hc1_room_setpoint": SettingsRegisters.HC1_ROOM_SETPOINT,
+    "hc1_parallel_shift": SettingsRegisters.HC1_PARALLEL_SHIFT,
+    "hc1_fixed_setpoint": SettingsRegisters.HC1_FIXED_SETPOINT,
+    "hc1_heating_curve_endpoint": SettingsRegisters.HC1_HEATING_CURVE_ENDPOINT,
+    "hc1_hysteresis": SettingsRegisters.HC1_HYSTERESIS,
+    "hc1_cooling_setpoint": SettingsRegisters.HC1_COOLING_SETPOINT,
+    "hc1_cooling_setpoint_30": SettingsRegisters.HC1_COOLING_SETPOINT_30,
+    "hot_water_setpoint_setting": SettingsRegisters.HOT_WATER_COMFORT_SETPOINT,
+    "hot_water_max_setpoint": SettingsRegisters.HOT_WATER_MAX_SETPOINT,
+    "hot_water_min_setpoint": SettingsRegisters.HOT_WATER_MIN_SETPOINT,
+    "hot_water_hysteresis": SettingsRegisters.HOT_WATER_HYSTERESIS,
+}
 
-    HOT_WATER_MAX_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
-        # Solltemperatur Maximal (R/W, range: Soll .. 85 °C)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=5048, scale=1.0, unit="°C", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=5048, scale=1.0, unit="°C", signed=False),
-    }
+COIL_DATAPOINTS: dict[str, dict[SoftwareVersion, int | None]] = {
+    # Inputs
+    "smart_grid_1": InputCoils.SMART_GRID_1,
+    "smart_grid_2": InputCoils.SMART_GRID_2,
+    "evu_lock": InputCoils.EVU_LOCK,
+    "external_lock": InputCoils.EXTERNAL_LOCK,
+    # Outputs
+    "compressor_1": OutputCoils.COMPRESSOR_1,
+    "compressor_2": OutputCoils.COMPRESSOR_2,
+    "primary_pump_fan": OutputCoils.PRIMARY_PUMP_FAN,
+    "second_heat_generator": OutputCoils.SECOND_HEAT_GENERATOR,
+    "heating_pump_m13": OutputCoils.HEATING_PUMP_M13,
+    "hot_water_pump": OutputCoils.HOT_WATER_PUMP,
+    "mixer_m21_open": OutputCoils.MIXER_M21_OPEN,
+    "mixer_m21_close": OutputCoils.MIXER_M21_CLOSE,
+    "aux_circ_pump": OutputCoils.AUX_CIRC_PUMP,
+    "flange_heater": OutputCoils.FLANGE_HEATER,
+    "heating_pump_m15": OutputCoils.HEATING_PUMP_M15,
+    "mixer_m22_open": OutputCoils.MIXER_M22_OPEN,
+    "mixer_m22_close": OutputCoils.MIXER_M22_CLOSE,
+    "pool_pump": OutputCoils.POOL_PUMP,
+    "collective_fault": OutputCoils.COLLECTIVE_FAULT,
+    "heating_pump_m14": OutputCoils.HEATING_PUMP_M14,
+    "cooling_pump": OutputCoils.COOLING_PUMP,
+    "heating_pump_m20": OutputCoils.HEATING_PUMP_M20,
+    "room_thermostat_cooling": OutputCoils.ROOM_THERMOSTAT_COOLING,
+    "primary_pump_cooling": OutputCoils.PRIMARY_PUMP_COOLING,
+    "solar_pump": OutputCoils.SOLAR_PUMP,
+}
 
-    HOT_WATER_MIN_SETPOINT: dict[SoftwareVersion, RegisterDefinition] = {
-        # Solltemperatur Minimal (R/W, range: 10 .. Soll)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=5145, scale=1.0, unit="°C", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=5145, scale=1.0, unit="°C", signed=False),
-    }
-
-    HOT_WATER_HYSTERESIS: dict[SoftwareVersion, RegisterDefinition] = {
-        # Hysterese (R/W, range: 2 .. 15 K)
-        SoftwareVersion.H: RegisterDefinition(address=None),
-        SoftwareVersion.J: RegisterDefinition(address=5045, scale=1.0, unit="K", signed=False),
-        SoftwareVersion.L_M: RegisterDefinition(address=5045, scale=1.0, unit="K", signed=False),
-    }
+# Datapoints that are derived from other datapoints in the client rather
+# than read from a register. Listed so the sensor platform can keep them.
+COMPUTED_DATAPOINTS: tuple[str, ...] = (
+    "cop",
+    "compressor_runtime_total",
+    "total_heat_generated",
+    "operating_mode",
+)
 
 
 def get_register_definition(
     register_dict: dict[SoftwareVersion, RegisterDefinition],
     software_version: SoftwareVersion,
 ) -> RegisterDefinition | None:
-    """Get register definition for a specific software version.
-    
-    Args:
-        register_dict: Dictionary mapping software versions to register definitions
-        software_version: The software version to look up
-        
-    Returns:
-        RegisterDefinition if found and has valid address, None otherwise
+    """Return the register definition for a software version, or None.
+
+    None is returned when the version is unknown or the address is None.
     """
     reg_def = register_dict.get(software_version)
     if reg_def is None or reg_def.address is None:
@@ -681,18 +580,18 @@ def get_register_definition(
     return reg_def
 
 
+def get_coil_address(
+    coil_dict: dict[SoftwareVersion, int | None], software_version: SoftwareVersion
+) -> int | None:
+    """Return the coil address for a software version, or None."""
+    return coil_dict.get(software_version)
+
+
 def scale_value(raw_value: int, register_def: RegisterDefinition) -> float:
-    """Scale raw register value using the register definition.
+    """Scale a raw register value using its definition.
 
     Two's-complement decoding is applied when ``signed=True``, sized by the
     register's width (16 bit for size=1, 32 bit for size=2).
-
-    Args:
-        raw_value: Raw integer value from register
-        register_def: Register definition with scale factor
-
-    Returns:
-        Scaled float value
     """
     if register_def.signed:
         bits = register_def.size * 16
@@ -700,19 +599,11 @@ def scale_value(raw_value: int, register_def: RegisterDefinition) -> float:
         if raw_value >= sign_bit:
             raw_value -= 1 << bits
 
-    return raw_value * register_def.scale
+    return raw_value * register_def.scale + register_def.offset
 
 
 def read_32bit_value(registers: list[int]) -> int:
-    """Combine two 16-bit registers into a 32-bit value.
-
-    Args:
-        registers: List of 2 register values [high, low]
-
-    Returns:
-        32-bit integer value
-
-    """
+    """Combine two 16-bit registers [high, low] into a 32-bit value."""
     if len(registers) < 2:
         return 0
     return (registers[0] << 16) | registers[1]

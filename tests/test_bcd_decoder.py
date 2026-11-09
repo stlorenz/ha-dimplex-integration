@@ -13,4 +13,3 @@ def test_decode_digits_12_ok():
 
 def test_decode_digits_12_invalid_chunk():
     assert decode_digits_12([10000, 0, 0]) is None
-

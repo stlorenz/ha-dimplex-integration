@@ -1,12 +1,12 @@
 """Tests for the Dimplex config flow."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import AbortFlow
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import AbortFlow, FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dimplex.config_flow import (
@@ -201,7 +201,9 @@ async def test_config_flow_duplicate_aborts(hass: HomeAssistant):
     )
     existing.add_to_hass(hass)
     assert (
-        hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, "192.168.1.100:502")
+        hass.config_entries.async_entry_for_domain_unique_id(
+            DOMAIN, "192.168.1.100:502"
+        )
         is not None
     )
 
@@ -212,19 +214,21 @@ async def test_config_flow_duplicate_aborts(hass: HomeAssistant):
     if getattr(flow, "handler", None) != DOMAIN:
         object.__setattr__(flow, "handler", DOMAIN)
 
-    with patch(
-        "custom_components.dimplex.config_flow.validate_input",
-        new=AsyncMock(return_value={"title": "Test Dimplex 2"}),
+    with (
+        patch(
+            "custom_components.dimplex.config_flow.validate_input",
+            new=AsyncMock(return_value={"title": "Test Dimplex 2"}),
+        ),
+        pytest.raises(AbortFlow, match="already_configured"),
     ):
-        with pytest.raises(AbortFlow, match="already_configured"):
-            await flow.async_step_user(
-                user_input={
-                    CONF_HOST: "192.168.1.100",
-                    CONF_PORT: 502,
-                    CONF_NAME: "Test Dimplex 2",
-                    CONF_MODEL: HeatPumpModel.LA1422C,
-                }
-            )
+        await flow.async_step_user(
+            user_input={
+                CONF_HOST: "192.168.1.100",
+                CONF_PORT: 502,
+                CONF_NAME: "Test Dimplex 2",
+                CONF_MODEL: HeatPumpModel.LA1422C,
+            }
+        )
 
 
 @pytest.mark.asyncio
@@ -259,7 +263,7 @@ async def test_config_flow_persists_software_version_and_slave(
 
 @pytest.mark.asyncio
 async def test_options_flow_two_steps_persists_overrides(
-    hass: HomeAssistant, enable_custom_integrations  # noqa: F811
+    hass: HomeAssistant, enable_custom_integrations
 ):
     """End-to-end options flow: init (model + sw version) -> features -> save.
 

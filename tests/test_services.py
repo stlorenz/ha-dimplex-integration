@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from homeassistant.core import SupportsResponse
+from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.dimplex.const import DOMAIN
@@ -81,7 +82,7 @@ async def test_write_register_requires_write_enabled(hass):
 
     await async_register_services(hass)
 
-    with pytest.raises(Exception):
+    with pytest.raises(HomeAssistantError):
         await hass.services.async_call(
             DOMAIN,
             SERVICE_WRITE_REGISTER,
@@ -92,8 +93,8 @@ async def test_write_register_requires_write_enabled(hass):
 
 
 @pytest.mark.asyncio
-async def test_diagnose_registers_returns_all_interpretations(hass):
-    """The diagnose service returns raw + every plausible decode."""
+async def test_diagnose_registers_checks_documented_ranges(hass):
+    """The diagnose service reads every mapped datapoint and flags range violations."""
     entry = MockConfigEntry(domain=DOMAIN, data={"host": "1.2.3.4"})
     entry.add_to_hass(hass)
 
@@ -101,22 +102,19 @@ async def test_diagnose_registers_returns_all_interpretations(hass):
     client.is_connected = True
     client.connect = AsyncMock(return_value=True)
 
-    # Pressure regs 32 (=230) and 33 (=180); aux temps 20-23 with one negative;
-    # 32-bit counters all return [hi=0, lo=12345] so big-endian gives 12345.
     async def fake_read(address: int, count: int = 1, slave: int = 1):
-        if count == 2:
-            return [0, 12345]
-        # 16-bit reads
+        if address == 5096:  # heating energy: 12-digit counter in 3 words
+            return [1234, 5, 0]
         return {
-            32: [230],
-            33: [180],
-            20: [65484],  # -52 as 16-bit signed -> -5.2 °C
-            21: [250],
-            22: [180],
-            23: [350],
-        }.get(address, [0])
+            1: [152],  # outside temperature 15.2 degC
+            5: [355],  # wiki: Vorlauf
+            9: [301],  # wiki: 2. Heizkreis
+            46: [50],  # HK1 room setpoint 5.0 degC -> below documented 15..30
+            5036: [21],  # parallel shift raw 21 -> +2 K
+        }.get(address, [0] * count)
 
     client.read_holding_registers = AsyncMock(side_effect=fake_read)
+    client.read_coils = AsyncMock(return_value=[True])
 
     coordinator = Mock()
     coordinator.client = client
@@ -136,24 +134,23 @@ async def test_diagnose_registers_returns_all_interpretations(hass):
         return_response=True,
     )
 
-    # Pressure: both scales reported
-    brine = resp["pressure_registers"]["brine_pressure"]
-    assert brine["raw"] == 230
-    assert brine["scale_0_01_bar"] == 2.30
-    assert brine["scale_0_1_bar"] == 23.0
+    regs = resp["registers"]
+    assert regs["outside_temperature"]["address"] == 1
+    assert regs["outside_temperature"]["value"] == 15.2
+    assert regs["outside_temperature"]["verdict"] == "ok"
 
-    # Aux temp: signed vs unsigned reported
-    evap = resp["aux_temperature_registers"]["evaporator_temperature"]
-    assert evap["raw"] == 65484
-    assert evap["signed_0_1_celsius"] == -5.2
-    assert evap["unsigned_0_1_celsius"] == 6548.4
+    assert regs["hc1_room_setpoint"]["value"] == 5.0
+    assert regs["hc1_room_setpoint"]["verdict"] == "below_documented_range"
+    assert any(p.startswith("hc1_room_setpoint") for p in resp["problems"])
 
-    # 32-bit: both endiannesses reported
-    runtime = resp["thirtytwo_bit_registers"]["compressor_runtime_total"]
-    assert runtime["raw_words"] == [0, 12345]
-    assert runtime["big_endian_unsigned"] == 12345
-    assert runtime["little_endian_unsigned"] == 12345 << 16
+    assert regs["hc1_parallel_shift"]["value"] == 2.0
+    assert regs["heating_energy"]["value"] == 51234
 
+    assert resp["coils"]["compressor_1"] == {"address": 41, "state": True}
+
+    assert resp["wiki_cross_check"]["5"]["wiki_name"].startswith("Temperatur Vorlauf")
+    assert resp["wiki_cross_check"]["5"]["value_celsius"] == 35.5
+    assert resp["wiki_cross_check"]["9"]["integration_uses_it_as"] == "hc2_temperature"
 
 
 @pytest.mark.asyncio
@@ -199,7 +196,7 @@ async def test_set_time_program_writes_selector_then_block(hass):
     calls = client.write_register.await_args_list
     assert calls[0].kwargs == {"address": 5065, "value": 4, "slave": 1}
     written = [(c.kwargs["address"], c.kwargs["value"]) for c in calls[1:]]
-    assert written == list(zip(range(5066, 5082), expected_block))
+    assert written == list(zip(range(5066, 5082), expected_block, strict=False))
     assert resp["success"] is True
     assert resp["readback"] == expected_block
 

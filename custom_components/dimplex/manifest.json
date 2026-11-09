@@ -1,15 +1,18 @@
 {
   "domain": "dimplex",
   "name": "Dimplex Heatpump integration",
-  "codeowners": ["@stlorenz"],
+  "codeowners": [
+    "@stlorenz"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/stlorenz/ha-dimplex-integration",
   "integration_type": "device",
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/stlorenz/ha-dimplex-integration/issues",
-  "requirements": ["pymodbus>=3.8.0"],
-  "version": "0.1.11",
-  "description": "Dimplex Heatpump integration, currently in development. Only tested with LA1422C heatpump."
+  "requirements": [
+    "pymodbus>=3.8.0"
+  ],
+  "version": "0.2.0",
+  "description": "Dimplex heat pump (WPM / NWPM Touch) via Modbus TCP. Register map from the official Dimplex datapoint list; tested on an LA 1422C (WPM L/M)."
 }
-

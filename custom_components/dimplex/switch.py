@@ -1,4 +1,5 @@
 """Switch platform for Dimplex integration."""
+
 from __future__ import annotations
 
 import logging
@@ -74,4 +75,3 @@ class DimplexWriteEnableSwitch(
         """Disable write mode (read-only)."""
         self.coordinator.set_write_enabled(False)
         self.async_write_ha_state()
-
