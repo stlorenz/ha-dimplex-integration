@@ -3,8 +3,8 @@
 This document tracks the implementation status of the Dimplex Heat Pump Home
 Assistant integration against the [Product Requirements Document](PRD.md).
 
-**Last Updated:** November 8, 2026
-**Version:** 0.2.0
+**Last Updated:** November 9, 2026
+**Version:** 0.2.0 (main, unreleased changes towards 1.0 listed in CHANGELOG.md)
 **Reference hardware:** LA 1422C with NWPM Touch, WPM software L/M
 
 All register addresses are taken from the official Dimplex wiki
@@ -22,6 +22,8 @@ in the wiki and were determined empirically.
 - ✅ Data coordinator with configurable polling interval (10–300 s, options flow)
 - ✅ Exponential backoff on consecutive failures (up to 5 min), reset on success
 - ✅ Per-entry Modbus unit/slave ID and WPM software version (H / J / L+M)
+- ✅ Reconfigure flow: host / port / unit ID can be changed without losing the entry (entity IDs, history)
+- ✅ Diagnostics download (config + coordinator state, host/port redacted)
 - ✅ Partial data on failures: system status is always delivered, operating data is best effort
 
 ### System status (all software versions)
@@ -50,7 +52,7 @@ in the wiki and were determined empirically.
 
 ### Quality
 
-- ✅ 144 unit tests, 84 % coverage, CI on Python 3.13 / 3.14 with black, isort, ruff
+- ✅ 163 unit tests, 88 % coverage, CI on Python 3.13 / 3.14 with black, isort, ruff, hassfest and the HACS validator
 - ✅ `scripts/validate_registers.py`: reads every mapped datapoint from a real WPM and checks documented ranges
 - ✅ English and German translations
 - ✅ Device info with WPM software version
@@ -67,7 +69,7 @@ in the wiki and were determined empirically.
 - ⬜ Coils 59 (M14) and 60 (M17) are on although the WPM lists neither output; entities disabled by default until confirmed
 - ✅ Status code 1 = "Aus" on L/M (was reported as unknown_1)
 - ✅ Hot water / HC1 settings read back with plausible values (48 / 60 / 10 °C, 6 K; 20.0 °C, 0 K, 50 °C, 3.0 K)
-- ⬜ Verify Software H / J register sets (only L/M hardware available so far)
+- ⬜ Verify Software H / J register sets (only L/M hardware available so far; marked "unverified" in the setup dialog and README)
 
 ### Not implemented
 
@@ -93,12 +95,25 @@ registry after the update.
 
 ---
 
+## Road to 1.0
+
+Code side (done on `main`): hassfest + HACS validation in CI, diagnostics and
+climate fully covered by tests, reconfigure flow, CHANGELOG, documentation of
+the Write Enable behaviour and of the unexplained coils 59/60.
+
+Hardware side (open, see checklist below): every write path has to be
+confirmed once on the LA 1422C, plus a reconnect test and a multi-day soak
+run at the default 30 s interval without connection drops or log spam.
+
 ## Testing checklist (manual, on hardware)
 
-- [ ] `scripts/validate_registers.py --host <ip>` reports no problems
-- [ ] Flow / return temperature match the WPM display
+- [x] `scripts/validate_registers.py --host <ip>` reports no problems (2026-11-09)
+- [x] Flow / return temperature match the WPM display (2026-11-09, compressor running)
 - [ ] Hot water setpoint write (number entity) is accepted and read back
 - [ ] HC1 room setpoint write via climate entity is accepted
 - [ ] Operating mode select: Winter ↔ Sommer round trip
 - [ ] Compressor binary sensor follows the compressor
+- [ ] Parallel shift write (number entity) is reflected on the WPM display
 - [ ] Connection recovery after unplugging the NWPM Touch for a minute (backoff visible in the log)
+- [ ] Reconfigure to a wrong IP shows "cannot connect", to the right IP keeps all entities
+- [ ] Several days of polling at 30 s without connection drops, memory growth or repeated warnings

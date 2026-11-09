@@ -7,6 +7,7 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import AbortFlow, FlowResult
 from homeassistant.exceptions import HomeAssistantError
@@ -49,11 +50,15 @@ _LOGGER = logging.getLogger(__name__)
 MODEL_OPTIONS = {model: name for model, name in MODEL_NAMES.items()}
 
 # Software version selection: stored as the IntEnum's int value in entry.data.
+# H and J use the addresses from the Dimplex wiki but have not been verified on
+# hardware yet (only L/M, LA 1422C). Say so where the user picks the version.
 SOFTWARE_VERSION_OPTIONS = {
-    int(SoftwareVersion.L_M): "WPM Software L / M (latest)",
-    int(SoftwareVersion.J): "WPM Software J",
-    int(SoftwareVersion.H): "WPM Software H",
+    int(SoftwareVersion.L_M): "WPM Software L / M (latest, verified on LA 1422C)",
+    int(SoftwareVersion.J): "WPM Software J (register map from wiki, unverified)",
+    int(SoftwareVersion.H): "WPM Software H (status only, unverified)",
 }
+
+STEP_RECONFIGURE_KEYS = (CONF_HOST, CONF_PORT, CONF_SLAVE_ID)
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
@@ -161,6 +166,69 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+        )
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Change host, port or unit ID of an existing entry.
+
+        Unlike removing and re-adding the integration this keeps the entry ID,
+        so entity IDs, history and dashboards survive e.g. a new IP address.
+        """
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            host = user_input[CONF_HOST]
+            port = user_input.get(CONF_PORT, DEFAULT_PORT)
+            unique_id = f"{host.lower()}:{port}"
+
+            # Another entry already talks to that host/port.
+            for other in self._async_current_entries(include_ignore=False):
+                if other.entry_id != entry.entry_id and other.unique_id == unique_id:
+                    return self.async_abort(reason="already_configured")
+
+            try:
+                await validate_input(self.hass, {**entry.data, **user_input})
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except (OSError, TimeoutError) as err:
+                _LOGGER.warning("Connection error during reconfigure: %s", err)
+                errors["base"] = "cannot_connect"
+            except Exception:
+                _LOGGER.exception("Unexpected exception during reconfigure")
+                errors["base"] = "unknown"
+            else:
+                changed = self.hass.config_entries.async_update_entry(
+                    entry,
+                    data={**entry.data, **user_input},
+                    unique_id=unique_id,
+                )
+                # A loaded entry is reloaded by the update listener registered in
+                # async_setup_entry. An entry stuck in setup-retry (e.g. the
+                # device moved) has no listener yet, so reload it explicitly.
+                if changed and entry.state is not ConfigEntryState.LOADED:
+                    self.hass.config_entries.async_schedule_reload(entry.entry_id)
+                return self.async_abort(reason="reconfigure_successful")
+
+        current = {**entry.data, **(user_input or {})}
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_HOST, default=current.get(CONF_HOST)): str,
+                    vol.Optional(
+                        CONF_PORT, default=current.get(CONF_PORT, DEFAULT_PORT)
+                    ): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
+                    vol.Optional(
+                        CONF_SLAVE_ID,
+                        default=current.get(CONF_SLAVE_ID, DEFAULT_SLAVE_ID),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=0, max=247)),
+                }
+            ),
+            errors=errors,
+            description_placeholders={"name": entry.title},
         )
 
 

@@ -171,3 +171,171 @@ async def test_set_temperature_no_write_when_disabled():
     await ent.async_set_temperature(temperature=22.5)
 
     coordinator.client.write_register.assert_not_awaited()
+
+
+# ------------------------------------------------------------- display paths
+def test_hvac_action_follows_the_status():
+    from homeassistant.components.climate import HVACAction
+
+    coordinator = _make_coordinator(software_version=SoftwareVersion.L_M)
+    ent = _make_entity(coordinator)
+
+    for status, action in (
+        ("off", HVACAction.OFF),
+        ("heating", HVACAction.HEATING),
+        ("hot_water", HVACAction.HEATING),
+        ("pool", HVACAction.HEATING),
+        ("defrost", HVACAction.HEATING),  # defrost is part of a heating cycle
+        ("cooling", HVACAction.COOLING),
+        ("evu_lock", HVACAction.IDLE),
+    ):
+        coordinator.data["status"] = status
+        assert ent.hvac_action == action, status
+
+    coordinator.data = None
+    assert ent.hvac_action is None
+
+
+def test_current_temperature_falls_back_to_return_when_no_room_sensor():
+    """The WPM reports exactly 0 for an unconnected room sensor."""
+    coordinator = _make_coordinator(software_version=SoftwareVersion.L_M)
+    coordinator.data["room_temperature"] = 0
+    coordinator.data["return_temperature"] = 33.9
+    ent = _make_entity(coordinator)
+    assert ent.current_temperature == 33.9
+
+    coordinator.data["room_temperature"] = 21.5
+    assert ent.current_temperature == 21.5
+
+    coordinator.data = None
+    assert ent.current_temperature is None
+    assert ent.target_temperature is None
+    assert ent.hvac_mode == HVACMode.OFF
+
+
+def test_hvac_mode_from_status_when_no_mode_register():
+    coordinator = _make_coordinator(software_version=SoftwareVersion.H)
+    ent = _make_entity(coordinator)
+    for status, mode in (
+        ("off", HVACMode.OFF),
+        ("heating", HVACMode.HEAT),
+        ("hot_water", HVACMode.HEAT),
+        ("cooling", HVACMode.COOL),
+    ):
+        coordinator.data["status"] = status
+        assert ent.hvac_mode == mode
+        assert ent.hvac_modes == [mode]
+
+
+def test_available_requires_connected_flag():
+    coordinator = _make_coordinator(software_version=SoftwareVersion.L_M)
+    ent = _make_entity(coordinator)
+    assert ent.available is True
+
+    coordinator.data["connected"] = False
+    assert ent.available is False
+
+    coordinator.data = None
+    assert ent.available is False
+
+
+# ------------------------------------------------------------- write failures
+@pytest.mark.asyncio
+async def test_set_temperature_without_register_or_value_is_a_noop():
+    coordinator = _make_coordinator(
+        software_version=SoftwareVersion.H, write_enabled=True
+    )
+    ent = _make_entity(coordinator)
+    await ent.async_set_temperature(temperature=22.0)
+    coordinator.client.write_register.assert_not_awaited()
+
+    coordinator = _make_coordinator(
+        software_version=SoftwareVersion.L_M, write_enabled=True
+    )
+    ent = _make_entity(coordinator)
+    await ent.async_set_temperature()  # no temperature kwarg
+    coordinator.client.write_register.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_set_temperature_write_failure_keeps_old_value():
+    coordinator = _make_coordinator(
+        software_version=SoftwareVersion.L_M, write_enabled=True
+    )
+    coordinator.client.write_register = AsyncMock(return_value=False)
+    ent = _make_entity(coordinator)
+
+    await ent.async_set_temperature(temperature=22.5)
+
+    assert coordinator.data["hc1_room_setpoint"] == 21.0
+    coordinator.async_request_refresh.assert_not_awaited()
+    ent.async_write_ha_state.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_set_hvac_mode_refused_when_disabled_or_unsupported():
+    coordinator = _make_coordinator(
+        software_version=SoftwareVersion.L_M, write_enabled=False
+    )
+    ent = _make_entity(coordinator)
+    await ent.async_set_hvac_mode(HVACMode.HEAT)
+    coordinator.client.write_register.assert_not_awaited()
+
+    coordinator = _make_coordinator(
+        software_version=SoftwareVersion.L_M, write_enabled=True
+    )
+    ent = _make_entity(coordinator)
+    await ent.async_set_hvac_mode(HVACMode.DRY)  # not mapped to a Betriebsmodus
+    coordinator.client.write_register.assert_not_awaited()
+
+    coordinator = _make_coordinator(
+        software_version=SoftwareVersion.H, write_enabled=True
+    )
+    ent = _make_entity(coordinator)
+    await ent.async_set_hvac_mode(HVACMode.HEAT)  # no register on H
+    coordinator.client.write_register.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_set_hvac_mode_write_failure_does_not_refresh():
+    coordinator = _make_coordinator(
+        software_version=SoftwareVersion.L_M, write_enabled=True
+    )
+    coordinator.client.write_register = AsyncMock(return_value=False)
+    ent = _make_entity(coordinator)
+
+    await ent.async_set_hvac_mode(HVACMode.HEAT)
+
+    coordinator.async_request_refresh.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_turn_on_off_map_to_winter_and_summer():
+    coordinator = _make_coordinator(
+        software_version=SoftwareVersion.L_M, write_enabled=True
+    )
+    ent = _make_entity(coordinator)
+
+    await ent.async_turn_on()
+    _, kwargs = coordinator.client.write_register.await_args
+    assert (kwargs["address"], kwargs["value"]) == (5015, 1)
+
+    await ent.async_turn_off()
+    _, kwargs = coordinator.client.write_register.await_args
+    assert (kwargs["address"], kwargs["value"]) == (5015, 0)
+
+
+@pytest.mark.asyncio
+async def test_async_setup_entry_adds_one_climate_entity():
+    from custom_components.dimplex.climate import async_setup_entry
+    from custom_components.dimplex.const import DOMAIN
+
+    coordinator = _make_coordinator(software_version=SoftwareVersion.L_M)
+    entry = _make_entry()
+    hass = SimpleNamespace(data={DOMAIN: {entry.entry_id: coordinator}})
+    added: list = []
+
+    await async_setup_entry(hass, entry, lambda ents: added.extend(ents))  # type: ignore[arg-type]
+
+    assert len(added) == 1
+    assert isinstance(added[0], DimplexClimate)

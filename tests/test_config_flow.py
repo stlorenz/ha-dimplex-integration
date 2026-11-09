@@ -322,3 +322,161 @@ async def test_options_flow_two_steps_persists_overrides(
     assert entry.options[CONF_SOFTWARE_VERSION] == int(SoftwareVersion.J)
     assert entry.options[OPT_COOLING_ENABLED] is True
     assert entry.options[OPT_HEAT_SOURCE] == "brine"
+
+
+# ----------------------------------------------------------------- reconfigure
+def _reconfigurable_entry(host: str = "10.0.0.5", unique_id: str | None = None):
+    return MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=unique_id or f"{host}:502",
+        title="Keller",
+        data={
+            CONF_HOST: host,
+            CONF_PORT: 502,
+            CONF_NAME: "Keller",
+            CONF_MODEL: HeatPumpModel.LA1422C,
+            CONF_SOFTWARE_VERSION: int(SoftwareVersion.L_M),
+            CONF_SLAVE_ID: 1,
+        },
+    )
+
+
+async def _start_reconfigure(hass: HomeAssistant, entry: MockConfigEntry):
+    return await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": "reconfigure", "entry_id": entry.entry_id},
+    )
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_updates_host_and_unique_id(
+    hass: HomeAssistant, enable_custom_integrations
+):
+    """A new IP is written to the existing entry; entry_id and name survive."""
+    entry = _reconfigurable_entry()
+    entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.dimplex.async_setup_entry",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "custom_components.dimplex.config_flow.validate_input",
+            new=AsyncMock(return_value={"title": "Keller"}),
+        ) as validate,
+    ):
+        result = await _start_reconfigure(hass, entry)
+        assert result["type"] == FlowResultType.FORM
+        assert result["step_id"] == "reconfigure"
+        assert result["description_placeholders"] == {"name": "Keller"}
+
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_HOST: "10.0.0.99", CONF_PORT: 503, CONF_SLAVE_ID: 2},
+        )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+
+    # validate_input saw the merged data (new host, old model/name)
+    (_, data), _ = validate.await_args
+    assert data[CONF_HOST] == "10.0.0.99"
+    assert data[CONF_MODEL] == HeatPumpModel.LA1422C
+
+    assert entry.data[CONF_HOST] == "10.0.0.99"
+    assert entry.data[CONF_PORT] == 503
+    assert entry.data[CONF_SLAVE_ID] == 2
+    assert entry.data[CONF_NAME] == "Keller"  # untouched
+    assert entry.data[CONF_SOFTWARE_VERSION] == int(SoftwareVersion.L_M)
+    assert entry.unique_id == "10.0.0.99:503"
+    assert entry.title == "Keller"
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_cannot_connect_shows_error(
+    hass: HomeAssistant, enable_custom_integrations
+):
+    entry = _reconfigurable_entry()
+    entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.dimplex.async_setup_entry",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "custom_components.dimplex.config_flow.validate_input",
+            new=AsyncMock(side_effect=CannotConnect),
+        ),
+    ):
+        result = await _start_reconfigure(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={CONF_HOST: "10.0.0.99"}
+        )
+
+    assert result["type"] == FlowResultType.FORM
+    assert result["errors"] == {"base": "cannot_connect"}
+    # nothing persisted
+    assert entry.data[CONF_HOST] == "10.0.0.5"
+    assert entry.unique_id == "10.0.0.5:502"
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_rejects_host_of_other_entry(
+    hass: HomeAssistant, enable_custom_integrations
+):
+    entry = _reconfigurable_entry("10.0.0.5")
+    other = _reconfigurable_entry("10.0.0.6")
+    entry.add_to_hass(hass)
+    other.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.dimplex.async_setup_entry",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "custom_components.dimplex.config_flow.validate_input",
+            new=AsyncMock(return_value={"title": "Keller"}),
+        ) as validate,
+    ):
+        result = await _start_reconfigure(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], user_input={CONF_HOST: "10.0.0.6", CONF_PORT: 502}
+        )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+    validate.assert_not_awaited()
+    assert entry.data[CONF_HOST] == "10.0.0.5"
+
+
+@pytest.mark.asyncio
+async def test_reconfigure_same_host_is_allowed(
+    hass: HomeAssistant, enable_custom_integrations
+):
+    """Changing only the unit ID keeps host/port and must not trip the duplicate check."""
+    entry = _reconfigurable_entry()
+    entry.add_to_hass(hass)
+
+    with (
+        patch(
+            "custom_components.dimplex.async_setup_entry",
+            new=AsyncMock(return_value=True),
+        ),
+        patch(
+            "custom_components.dimplex.config_flow.validate_input",
+            new=AsyncMock(return_value={"title": "Keller"}),
+        ),
+    ):
+        result = await _start_reconfigure(hass, entry)
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            user_input={CONF_HOST: "10.0.0.5", CONF_PORT: 502, CONF_SLAVE_ID: 7},
+        )
+
+    assert result["type"] == FlowResultType.ABORT
+    assert result["reason"] == "reconfigure_successful"
+    assert entry.data[CONF_SLAVE_ID] == 7
+    assert entry.unique_id == "10.0.0.5:502"

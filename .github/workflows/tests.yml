@@ -60,10 +60,29 @@ jobs:
         pip install ruff black isort
 
     - name: Run black
-      run: black --check custom_components/ tests/
+      run: black --check custom_components/ tests/ scripts/
 
     - name: Run isort
-      run: isort --check-only custom_components/ tests/
+      run: isort --check-only custom_components/ tests/ scripts/
 
     - name: Run ruff
-      run: ruff check custom_components/ tests/
+      run: ruff check custom_components/ tests/ scripts/
+
+  # Home Assistant's own integration validator: manifest, strings/translations,
+  # services.yaml schema, dependency pins, ...
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: home-assistant/actions/hassfest@master
+
+  # HACS repository validator (hacs.json, README, manifest, release layout).
+  # "brands" is ignored until a logo is submitted to home-assistant/brands.
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: hacs/action@main
+      with:
+        category: integration
+        ignore: brands

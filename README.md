@@ -1,4 +1,6 @@
-THIS IS A WORK IN PROGRESS. DO NOT USE YET. 
+> **Status:** pre-1.0. Reading has been validated on an LA 1422C (WPM L/M);
+> writing (setpoints, operating mode) is implemented and tested in software but
+> is still being verified on hardware. See [CHANGELOG.md](CHANGELOG.md).
 
 # Dimplex Heat Pump Home Assistant Integration
 
@@ -36,7 +38,9 @@ All addresses come from the official Dimplex datapoint list
 - **Digital inputs** (coils 3–6): EVU lock, external lock, Smart Grid 1/2
 - **Digital outputs** (coils 41–71): compressor 1/2, primary pump / fan,
   2nd heat generator, heating / hot water / pool / cooling pumps, mixers,
-  flange heater, collective fault
+  flange heater, collective fault. Coils 59 (M14) and 60 (M17) read "on" on
+  the reference system although the WPM lists neither output; those two
+  entities are disabled by default until their meaning is confirmed.
 
 ### Climate Control (heating circuit 1, WPM software J/L/M)
 - Target temperature = room setpoint, register 46 (15–30 °C, 0.5 °C steps)
@@ -78,6 +82,11 @@ value optimistically until the next poll confirms it.
 - Polling interval configurable (10–300 s, default 30 s) in the integration options
 - Exponential backoff after consecutive failures (up to 5 min), automatic reconnect
 - Register writes are retried once after a network error
+- **Write Enable** is deliberately off after every Home Assistant restart. Turn it
+  on in the automation that needs it (and off again afterwards) rather than
+  relying on it staying on.
+- Host, port and unit ID can be changed later via **Reconfigure** on the
+  integration entry; entity IDs and history are kept.
 
 ### Time Programme Services
 - `dimplex.set_time_program` – write a complete raise/lower (Anhebung/Absenkung)
@@ -149,6 +158,9 @@ data:
    - **WPM Software Version**: H, J or L/M (shown on the WPM display under Info).
      Extended data and all controls need J or L/M.
    - **Modbus Unit / Slave ID**: usually `1`
+
+If the NWPM Touch later gets a new IP address, use **Reconfigure** on the
+integration entry instead of removing and re-adding it.
 
 ### Configuring Features
 
@@ -248,20 +260,23 @@ title: Heat Pump Status
 
 ## Home Assistant Compatibility
 
-Requires Home Assistant **2024.11 or newer** (the coordinator passes its config
-entry explicitly, as required by current HA). Tested against HA 2026.2.
+Requires Home Assistant **2026.1 or newer** (Python 3.13+). Tested against HA
+2026.10. CI runs the unit tests on Python 3.13 and 3.14 plus `hassfest` and the
+HACS validator.
 
 ## Software Version Support
 
 The WPM software version is selected during setup (and can be changed in the
 options); there is no Modbus datapoint to detect it automatically.
 
-- **L/M Software** (current) - everything described above, including sensor errors
-- **J Software** - everything except the few L/M-only registers (auxiliary circulation pump runtime, cooling setpoint at 30 °C)
-- **H Software** - system status only (status, lock, error); no operating data, no controls
+| WPM software | Scope | Hardware status |
+|---|---|---|
+| **L/M** (current) | everything described above, including sensor errors | verified on an LA 1422C |
+| **J** | everything except the L/M-only registers (auxiliary circulation pump runtime, cooling setpoint at 30 °C) | **unverified**, addresses from the Dimplex wiki |
+| **H** | system status only (status, lock, error); no operating data, no controls | **unverified** |
 
-Only L/M hardware (LA 1422C) has been tested so far. Please open an issue with
-the output of `scripts/validate_registers.py` if you run J or H.
+If you run J or H, please open an issue with the output of
+`scripts/validate_registers.py` so the mapping can be confirmed.
 
 ## Validating the register map on your device
 
@@ -272,8 +287,9 @@ venv/bin/python scripts/validate_registers.py --host 192.168.1.33
 
 The script reads every datapoint the integration knows, prints raw and scaled
 values with a verdict against the ranges documented by Dimplex, and prints
-registers 5 and 9 side by side (the wiki and this integration disagree on
-which one is the flow temperature, see
+registers 5 (flow) and 9 (2nd heating circuit) side by side. Judge those two
+only while the compressor runs: with the heat pump idle both drift towards
+the return temperature (see
 [docs/REGISTER_MAPPING_GUIDE.md](docs/REGISTER_MAPPING_GUIDE.md)).
 
 ## Troubleshooting
@@ -316,7 +332,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 1. Clone the repository
 2. Python 3.13 or newer: `python3 -m venv venv && venv/bin/pip install -r requirements_test.txt`
-3. Run `venv/bin/pytest` (144 tests) and `venv/bin/black --check .`, `venv/bin/isort --check-only .`, `venv/bin/ruff check .`
+3. Run `venv/bin/pytest` (163 tests) and `venv/bin/black --check .`, `venv/bin/isort --check-only .`, `venv/bin/ruff check .`
 4. Validate register changes on hardware with `scripts/validate_registers.py`
 5. Submit a pull request
 
@@ -328,7 +344,7 @@ For issues and questions:
 
 ## License
 
-[Add your license here]
+[MIT](LICENSE) © 2025–2026 Stefan Lorenz
 
 ## Acknowledgments
 
