@@ -13,8 +13,14 @@ All notable changes to this integration are documented here. The format follows
   2./3. Heiz-/Kühlkreis". HC2 and HC3 share one register block selected via
   register 5082; the integration only switches the selector while Write
   Enable is on and re-checks it before every write. HC3 is not exposed yet.
+- Reconfigure flow: change host, port or Modbus unit ID of an existing entry
+  without losing entity IDs and history.
+- Diagnostics download now includes software version, model, unit ID,
+  Write Enable state and the current polling interval.
 - `scripts/validate_registers.py` prints the shared HC2/HC3 block together
   with the selector (5082) and register 209 for cross-checking the wiki.
+- CI: `hassfest` and HACS validation jobs next to the Python 3.13 / 3.14 tests.
+- This changelog and an MIT license file.
 
 ### Fixed
 - Climate action showed "Off" next to mode "Heat" whenever the compressor was
@@ -24,16 +30,6 @@ All notable changes to this integration are documented here. The format follows
 - Climate no longer shows the return temperature as "current temperature"
   when no room sensor is fitted; flow / return / return setpoint are entity
   attributes instead.
-
-### Added
-- Reconfigure flow: change host, port or Modbus unit ID of an existing entry
-  without losing entity IDs and history.
-- Diagnostics download now includes software version, model, unit ID,
-  Write Enable state and the current polling interval.
-- CI: `hassfest` and HACS validation jobs next to the Python 3.13 / 3.14 tests.
-- This changelog and an MIT license file.
-
-### Fixed
 - `manifest.json` carried a `description` key that hassfest rejects; the
   `off` option of `set_time_program` was parsed as a YAML boolean.
 - `CONFIG_SCHEMA` declares the integration as UI-only (hassfest warning).
@@ -48,7 +44,8 @@ All notable changes to this integration are documented here. The format follows
   integration disagree on registers 5 / 9.
 
 ### Tests
-- Climate entity and diagnostics fully covered; 163 tests, 88 % coverage.
+- Climate entity, diagnostics and the HC2 selector logic covered; 178 tests,
+  88 % coverage.
 
 ## [0.2.0] - 2026-11-09
 
