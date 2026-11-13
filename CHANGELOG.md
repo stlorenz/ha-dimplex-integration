@@ -4,11 +4,6 @@ All notable changes to this integration are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
-
-### Changed
-- Changelog: merged the duplicated "Added" / "Fixed" headings of 0.3.0.
-
 ## [0.3.0] - 2026-11-13
 
 ### Added
@@ -101,7 +96,6 @@ All notable changes to this integration are documented here. The format follows
 - Energy and runtime metrics, COP with smoothing, raw register services.
 - pymodbus 3.8 support, availability checks for sensors and binary sensors.
 
-[Unreleased]: https://github.com/stlorenz/ha-dimplex-integration/compare/v0.3.0...HEAD
 [0.3.0]: https://github.com/stlorenz/ha-dimplex-integration/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/stlorenz/ha-dimplex-integration/compare/v0.1.8...v0.2.0
 [0.1.9 - 0.1.11]: https://github.com/stlorenz/ha-dimplex-integration/compare/v0.1.8...d4cc757
