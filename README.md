@@ -46,7 +46,11 @@ All addresses come from the official Dimplex datapoint list
 - Target temperature = room setpoint, register 46 (15–30 °C, 0.5 °C steps)
 - HVAC mode = Betriebsmodus, register 5015: **Off** = Sommer (heating off, hot
   water continues), **Heat** = Winter, **Cool** = Kühlen (only if cooling is installed)
-- Current temperature = room sensor 1, falling back to the return temperature
+- Current temperature = room sensor 1; without a room sensor none is shown and
+  flow / return temperature and return setpoint are attributes of the entity
+- HVAC action: Off in Sommer, Heating / Cooling / Defrosting only while a
+  compressor runs, otherwise Idle (hot water and pool charging count as idle
+  for the heating circuit)
 - Writes require the **Write Enable** switch
 
 ### Operating Mode Select

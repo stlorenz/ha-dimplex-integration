@@ -6,6 +6,15 @@ All notable changes to this integration are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Climate action showed "Off" next to mode "Heat" whenever the compressor was
+  idle, because WPM L/M reports status "Aus" in that case. The action is now
+  derived from the operating mode and the compressor outputs: Off in Sommer,
+  Heating / Cooling / Defrosting while a compressor runs, otherwise Idle.
+- Climate no longer shows the return temperature as "current temperature"
+  when no room sensor is fitted; flow / return / return setpoint are entity
+  attributes instead.
+
 ### Added
 - Reconfigure flow: change host, port or Modbus unit ID of an existing entry
   without losing entity IDs and history.

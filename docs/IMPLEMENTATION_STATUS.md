@@ -109,10 +109,10 @@ run at the default 30 s interval without connection drops or log spam.
 
 - [x] `scripts/validate_registers.py --host <ip>` reports no problems (2026-11-09)
 - [x] Flow / return temperature match the WPM display (2026-11-09, compressor running)
-- [ ] Hot water setpoint write (number entity) is accepted and read back
+- [x] Hot water setpoint write (number entity) is accepted and read back
 - [ ] HC1 room setpoint write via climate entity is accepted
-- [ ] Operating mode select: Winter ↔ Sommer round trip
-- [ ] Compressor binary sensor follows the compressor
+- [ x] Operating mode select: Winter ↔ Sommer round trip
+- [x ] Compressor binary sensor follows the compressor
 - [ ] Parallel shift write (number entity) is reflected on the WPM display
 - [ ] Connection recovery after unplugging the NWPM Touch for a minute (backoff visible in the log)
 - [ ] Reconfigure to a wrong IP shows "cannot connect", to the right IP keeps all entities

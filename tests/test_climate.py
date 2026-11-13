@@ -174,35 +174,73 @@ async def test_set_temperature_no_write_when_disabled():
 
 
 # ------------------------------------------------------------- display paths
-def test_hvac_action_follows_the_status():
+def test_hvac_action_needs_a_running_compressor():
+    """L/M reports status "Aus" whenever the compressor idles, even in Winter.
+
+    Seen on an LA 1422C: Betriebsmodus Winter, compressor off -> the entity
+    showed action "Off" next to mode "Heat". Idle is the right answer.
+    """
     from homeassistant.components.climate import HVACAction
 
     coordinator = _make_coordinator(software_version=SoftwareVersion.L_M)
+    coordinator.data["operating_mode"] = "winter"
+    coordinator.data["compressor_1"] = False
+    coordinator.data["compressor_2"] = False
     ent = _make_entity(coordinator)
 
+    for status in ("off", "heating", "hot_water", "evu_lock"):
+        coordinator.data["status"] = status
+        assert ent.hvac_action == HVACAction.IDLE, status
+
+    coordinator.data["compressor_1"] = True
     for status, action in (
-        ("off", HVACAction.OFF),
         ("heating", HVACAction.HEATING),
-        ("hot_water", HVACAction.HEATING),
-        ("pool", HVACAction.HEATING),
-        ("defrost", HVACAction.HEATING),  # defrost is part of a heating cycle
+        ("defrost", HVACAction.DEFROSTING),
         ("cooling", HVACAction.COOLING),
-        ("evu_lock", HVACAction.IDLE),
+        ("hot_water", HVACAction.IDLE),  # nothing reaches heating circuit 1
+        ("pool", HVACAction.IDLE),
+        ("off", HVACAction.IDLE),
     ):
         coordinator.data["status"] = status
         assert ent.hvac_action == action, status
+
+    # Sommer = space heating off, whatever the compressor does
+    coordinator.data["operating_mode"] = "summer"
+    coordinator.data["status"] = "hot_water"
+    assert ent.hvac_action == HVACAction.OFF
 
     coordinator.data = None
     assert ent.hvac_action is None
 
 
-def test_current_temperature_falls_back_to_return_when_no_room_sensor():
-    """The WPM reports exactly 0 for an unconnected room sensor."""
+def test_hvac_action_falls_back_to_status_without_coils():
+    """Software J has the mode register but may lack coil data."""
+    from homeassistant.components.climate import HVACAction
+
+    coordinator = _make_coordinator(software_version=SoftwareVersion.J)
+    coordinator.data["operating_mode"] = "winter"
+    ent = _make_entity(coordinator)
+
+    coordinator.data["status"] = "heat_pump_on_heating"
+    assert ent.hvac_action == HVACAction.HEATING
+    coordinator.data["status"] = "off"
+    assert ent.hvac_action == HVACAction.IDLE
+
+
+def test_no_current_temperature_without_room_sensor():
+    """The WPM reports exactly 0 for an unconnected room sensor.
+
+    The return temperature must not be shown as "current" next to a room
+    setpoint; it is an attribute instead.
+    """
     coordinator = _make_coordinator(software_version=SoftwareVersion.L_M)
     coordinator.data["room_temperature"] = 0
     coordinator.data["return_temperature"] = 33.9
+    coordinator.data["flow_temperature"] = 37.7
     ent = _make_entity(coordinator)
-    assert ent.current_temperature == 33.9
+    assert ent.current_temperature is None
+    assert ent.extra_state_attributes["return_temperature"] == 33.9
+    assert ent.extra_state_attributes["flow_temperature"] == 37.7
 
     coordinator.data["room_temperature"] = 21.5
     assert ent.current_temperature == 21.5
