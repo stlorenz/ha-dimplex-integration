@@ -4,7 +4,7 @@ This document tracks the implementation status of the Dimplex Heat Pump Home
 Assistant integration against the [Product Requirements Document](PRD.md).
 
 **Last Updated:** November 13, 2026
-**Version:** 0.2.0 (main, unreleased changes towards 1.0 listed in CHANGELOG.md)
+**Version:** 0.3.0
 **Reference hardware:** LA 1422C with NWPM Touch, WPM software L/M
 
 All register addresses are taken from the official Dimplex wiki
@@ -48,6 +48,7 @@ in the wiki and were determined empirically.
 - ✅ Climate entity for heating circuit 1: room setpoint (register 46, 15–30 °C), HVAC mode via Betriebsmodus (OFF = Sommer, HEAT = Winter, COOL = Kühlen)
 - ✅ Select: operating mode (Sommer / Winter / Urlaub / Party / 2. WE / Kühlen)
 - ✅ Numbers: hot water setpoint / max / min / hysteresis; HC1 parallel shift, heating curve endpoint, fixed setpoint, hysteresis, cooling setpoints
+- ✅ Numbers for HC2 (shared HC2/HC3 block behind selector 5082): parallel shift, heating curve endpoint, max temperature, fixed setpoint, mixer runtime / hysteresis, cooling room setpoint
 - ✅ Services: read/write raw registers, diagnose registers, set/read time programme
 
 ### Quality
@@ -73,7 +74,8 @@ in the wiki and were determined empirically.
 
 ### Not implemented
 
-- ⬜ Settings for heating circuits 2/3, swimming pool and 2nd heat generator (wiki pages exist, not yet mapped)
+- ⬜ Settings for heating circuit 3 (same block as HC2, needs the selector toggled per poll), swimming pool and 2nd heat generator (wiki pages exist, not yet mapped)
+- ⬜ Confirm on hardware that 5082 (table) rather than 209 (wiki intro) is the HC2/HC3 selector; the validation script prints both
 - ⬜ Remaining time programme functions (hot water lock, thermal disinfection, circulation pump)
 - ⬜ Ventilation datapoints (registers 120–127, 5034)
 - ⬜ Firmware version / serial number in device info (no Modbus datapoint documented)
@@ -120,4 +122,5 @@ Verified on the LA 1422C (WPM L/M) by Stefan Lorenz; dates are the day of the ch
 - [x] Connection recovery after unplugging the NWPM Touch for a minute, backoff visible in the log (2026-11-13)
 - [x] Reconfigure to a wrong IP shows "cannot connect", to the right IP keeps all entities (2026-11-13)
 - [x] Climate action shows Idle with the compressor off in Winter, Off in Sommer (2026-11-13, after PR #6)
+- [ ] HC2 settings: values match the WPM display (2. Heizkreis menu), parallel shift write visible on the WPM, selector 5082 stays 2
 - [ ] Several days of polling at 30 s without connection drops, memory growth or repeated warnings (started 2026-11-13)

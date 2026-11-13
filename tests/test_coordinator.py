@@ -249,3 +249,41 @@ async def test_coordinator_backs_off_after_failures_and_recovers(hass: HomeAssis
     data = await coordinator._async_update_data()
     assert data["connected"] is True
     assert coordinator.update_interval.total_seconds() == 30
+
+
+@pytest.mark.asyncio
+async def test_coordinator_reads_hc2_block_only_with_second_circuit(
+    hass: HomeAssistant,
+):
+    """HC2 settings are fetched when enabled; selector writes need Write Enable."""
+    for second_hc, write_enabled, expect_calls in (
+        (False, True, 0),
+        (True, False, 1),
+        (True, True, 1),
+    ):
+        coordinator = DimplexDataUpdateCoordinator(
+            hass,
+            host="192.168.1.100",
+            port=502,
+            capabilities={"second_hc_enabled": second_hc},
+        )
+        coordinator.set_write_enabled(write_enabled)
+        type(coordinator.client).is_connected = property(lambda self: True)
+        coordinator.client.read_system_status = AsyncMock(
+            return_value={"status_code": 2, "lock_code": 0, "error_code": 0}
+        )
+        coordinator.client.read_holding_registers = AsyncMock(return_value=[0])
+        coordinator.client.read_operating_data = AsyncMock(return_value={"x": 1})
+        coordinator.client.read_hc_settings = AsyncMock(
+            return_value={"hc_settings_selector": 2, "hc2_parallel_shift": 1}
+        )
+
+        data = await coordinator._async_update_data()
+
+        assert coordinator.client.read_hc_settings.await_count == expect_calls
+        if expect_calls:
+            _, kwargs = coordinator.client.read_hc_settings.await_args
+            assert kwargs["allow_select"] is write_enabled
+            assert data["hc2_parallel_shift"] == 1
+        else:
+            assert "hc2_parallel_shift" not in data

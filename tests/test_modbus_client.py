@@ -406,3 +406,130 @@ async def test_read_operating_data_skips_everything_on_software_h():
     assert data == {}
     client.read_holding_registers.assert_not_awaited()
     client.read_coils.assert_not_awaited()
+
+
+# ----------------------------------------------------------- HC2 settings
+def _hc2_table(selector: int) -> dict[int, list[int]]:
+    return {
+        5082: [selector],
+        5084: [55],  # Heizkurvenendpunkt
+        5085: [35],  # Festwert
+        5086: [21],  # Parallelverschiebung +2 K
+        5087: [3],  # Mischerlaufzeit
+        93: [10],  # Mischerhysterese 1.0 K
+        5088: [60],  # Max
+        5089: [15],  # Kuehlung Raumsoll 22.5
+    }
+
+
+@pytest.mark.asyncio
+async def test_read_hc_settings_when_hc2_already_selected():
+    from custom_components.dimplex.modbus_registers import SoftwareVersion
+
+    client = _connected_client()
+    table = _hc2_table(2)
+    client.read_holding_registers = AsyncMock(
+        side_effect=lambda a, c=1, s=None: table.get(a)
+    )
+    client.write_register = AsyncMock(return_value=True)
+
+    data = await client.read_hc_settings(SoftwareVersion.L_M)
+
+    assert data["hc_settings_selector"] == 2
+    assert data["hc2_heating_curve_endpoint"] == 55
+    assert data["hc2_parallel_shift"] == 2
+    assert data["hc2_mixer_hysteresis"] == pytest.approx(1.0)
+    assert data["hc2_cooling_room_setpoint"] == 22.5
+    client.write_register.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_read_hc_settings_skips_block_without_permission_to_select():
+    from custom_components.dimplex.modbus_registers import SoftwareVersion
+
+    client = _connected_client()
+    table = _hc2_table(3)
+    client.read_holding_registers = AsyncMock(
+        side_effect=lambda a, c=1, s=None: table.get(a)
+    )
+    client.write_register = AsyncMock(return_value=True)
+
+    data = await client.read_hc_settings(SoftwareVersion.L_M, allow_select=False)
+
+    assert data == {"hc_settings_selector": 3}
+    client.write_register.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_read_hc_settings_writes_selector_when_allowed():
+    from custom_components.dimplex.modbus_registers import SoftwareVersion
+
+    client = _connected_client()
+    table = _hc2_table(3)
+
+    async def fake_write(address, value, slave=None):
+        table[address] = [value]
+        return True
+
+    client.read_holding_registers = AsyncMock(
+        side_effect=lambda a, c=1, s=None: table.get(a)
+    )
+    client.write_register = AsyncMock(side_effect=fake_write)
+
+    data = await client.read_hc_settings(SoftwareVersion.L_M, allow_select=True)
+
+    client.write_register.assert_awaited_once_with(address=5082, value=2)
+    assert data["hc_settings_selector"] == 2
+    assert data["hc2_max_temperature"] == 60
+
+
+@pytest.mark.asyncio
+async def test_read_hc_settings_gives_up_when_selector_write_fails():
+    from custom_components.dimplex.modbus_registers import SoftwareVersion
+
+    client = _connected_client()
+    table = _hc2_table(3)
+    client.read_holding_registers = AsyncMock(
+        side_effect=lambda a, c=1, s=None: table.get(a)
+    )
+    client.write_register = AsyncMock(return_value=False)
+
+    data = await client.read_hc_settings(SoftwareVersion.L_M, allow_select=True)
+
+    assert data == {"hc_settings_selector": 3}
+
+
+@pytest.mark.asyncio
+async def test_read_hc_settings_is_empty_on_software_h_or_read_failure():
+    from custom_components.dimplex.modbus_registers import SoftwareVersion
+
+    client = _connected_client()
+    client.read_holding_registers = AsyncMock(return_value=None)
+    client.write_register = AsyncMock(return_value=True)
+
+    assert await client.read_hc_settings(SoftwareVersion.H, allow_select=True) == {}
+    assert await client.read_hc_settings(SoftwareVersion.L_M, allow_select=True) == {}
+    client.write_register.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_select_heating_circuit_only_writes_when_needed():
+    from custom_components.dimplex.modbus_registers import SoftwareVersion
+
+    client = _connected_client()
+    table = {5082: [2]}
+
+    async def fake_write(address, value, slave=None):
+        table[address] = [value]
+        return True
+
+    client.read_holding_registers = AsyncMock(
+        side_effect=lambda a, c=1, s=None: table.get(a)
+    )
+    client.write_register = AsyncMock(side_effect=fake_write)
+
+    assert await client.select_heating_circuit(SoftwareVersion.L_M, 2) is True
+    client.write_register.assert_not_awaited()
+    assert await client.select_heating_circuit(SoftwareVersion.L_M, 3) is True
+    client.write_register.assert_awaited_once_with(address=5082, value=3)
+    assert await client.select_heating_circuit(SoftwareVersion.H, 2) is False

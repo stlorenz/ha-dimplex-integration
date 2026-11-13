@@ -13,6 +13,9 @@ from pymodbus.exceptions import ModbusException
 from .modbus_registers import SoftwareVersion
 from .modbus_registers_extended import (
     COIL_DATAPOINTS,
+    HC2_SELECTOR_VALUE,
+    HC2_SETTINGS_DATAPOINTS,
+    HC_SETTINGS_SELECTOR,
     INPUT_COIL_BLOCK,
     OPERATING_MODE_KEYS,
     OUTPUT_COIL_BLOCK,
@@ -68,6 +71,7 @@ class DimplexModbusClient:
         self._unit_id_kw: str | None = None
         # COP smoothing state
         self._smoothed_cop: float | None = None
+        self._hc_select_hint_logged = False
 
     async def _call_with_unit_id(
         self,
@@ -505,6 +509,86 @@ class DimplexModbusClient:
             # but keep previous smoothed value if available
             if self._smoothed_cop is not None:
                 data["cop"] = round(self._smoothed_cop, 2)
+
+    # ------------------------------------------------- HC2/HC3 settings block
+    async def read_hc_selector(self, software_version: SoftwareVersion) -> int | None:
+        """Return the circuit currently selected in register 5082 (2 or 3)."""
+        sel = get_register_definition(HC_SETTINGS_SELECTOR, software_version)
+        if sel is None or sel.address is None:
+            return None
+        words = await self.read_holding_registers(sel.address, 1)
+        return words[0] if words else None
+
+    async def select_heating_circuit(
+        self, software_version: SoftwareVersion, circuit: int
+    ) -> bool:
+        """Make the shared settings block (5084..) refer to ``circuit``.
+
+        Reads the selector first and only writes when it differs, so a
+        steady state costs one read per poll and no writes.
+        """
+        sel = get_register_definition(HC_SETTINGS_SELECTOR, software_version)
+        if sel is None or sel.address is None:
+            return False
+        current = await self.read_hc_selector(software_version)
+        if current == circuit:
+            return True
+        if not await self.write_register(address=sel.address, value=circuit):
+            return False
+        # The WPM applies the selector immediately; confirm before trusting
+        # the block.
+        return await self.read_hc_selector(software_version) == circuit
+
+    async def read_hc_settings(
+        self,
+        software_version: SoftwareVersion,
+        circuit: int = HC2_SELECTOR_VALUE,
+        *,
+        allow_select: bool = False,
+    ) -> dict[str, Any]:
+        """Read the settings block of heating circuit ``circuit``.
+
+        The block is only meaningful while register 5082 equals ``circuit``.
+        With ``allow_select`` the selector is written if needed (this is a
+        write, so the caller must hold the Write Enable permission);
+        without it the block is skipped when another circuit is selected.
+
+        Returns an empty dict when the block could not be read; the key
+        ``hc_settings_selector`` is always set when the selector was readable.
+        """
+        data: dict[str, Any] = {}
+        current = await self.read_hc_selector(software_version)
+        if current is None:
+            return data
+        data["hc_settings_selector"] = current
+
+        if current != circuit:
+            if not allow_select:
+                if not self._hc_select_hint_logged:
+                    _LOGGER.info(
+                        "Register 5082 selects heating circuit %s, not %s; HC%s "
+                        "settings stay unavailable until Write Enable is turned on "
+                        "once so the integration may switch the selector",
+                        current,
+                        circuit,
+                        circuit,
+                    )
+                    self._hc_select_hint_logged = True
+                return data
+            if not await self.select_heating_circuit(software_version, circuit):
+                _LOGGER.warning("Could not select heating circuit %s in 5082", circuit)
+                return data
+            data["hc_settings_selector"] = circuit
+            self._hc_select_hint_logged = False
+
+        for key, register_dict in HC2_SETTINGS_DATAPOINTS.items():
+            reg_def = get_register_definition(register_dict, software_version)
+            if reg_def is None:
+                continue
+            value = await self._read_register_with_definition(reg_def)
+            if value is not None:
+                data[key] = value
+        return data
 
     async def read_operating_data(
         self, software_version: SoftwareVersion

@@ -465,6 +465,90 @@ class SettingsRegisters:
 # platform uses it to skip entities that can never have data, and the
 # validation script uses it to check real devices.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Heating circuit 2 / 3 settings (wiki "Einstellungen 2./3. Heiz-/Kuehlkreis",
+# https://dimplex.atlassian.net/wiki/spaces/DW/pages/3341123585)
+#
+# Both circuits share ONE register block. Register 5082 selects which circuit
+# the block refers to (2 = 2. Heizkreis, 3 = 3. Heizkreis), the same pattern
+# as the time programme selector 5065. The wiki page's intro mentions address
+# 209 for the selector while its table says 5082; the table is used here
+# (consistent with the other 5000-range settings). The validation script
+# prints both so the choice can be checked on a device.
+#
+# Only HC2 is exposed as entities. HC3 would require toggling the selector on
+# every poll, which doubles the writes; it is left for a later version.
+# ---------------------------------------------------------------------------
+HC_SETTINGS_SELECTOR = _reg(5082, signed=False, min_value=2, max_value=3, writable=True)
+HC2_SELECTOR_VALUE = 2
+HC3_SELECTOR_VALUE = 3
+
+
+class HC2SettingsRegisters:
+    """Settings of heating circuit 2 (valid while register 5082 == 2)."""
+
+    # Heizkurvenendpunkt 20..70 degC
+    HEATING_CURVE_ENDPOINT = _reg(
+        5084, unit="°C", signed=False, min_value=20, max_value=70, writable=True
+    )
+    # Festwertemperatur 20..60 degC
+    FIXED_SETPOINT = _reg(
+        5085, unit="°C", signed=False, min_value=20, max_value=60, writable=True
+    )
+    # Parallelverschiebung: raw 0..38 -> -19..+19 K (raw 19 = 0 K)
+    PARALLEL_SHIFT = _reg(
+        5086,
+        unit="K",
+        signed=False,
+        offset=-19.0,
+        min_value=-19,
+        max_value=19,
+        writable=True,
+    )
+    # Mischerlaufzeit 1..6 min
+    MIXER_RUNTIME = _reg(
+        5087, unit="min", signed=False, min_value=1, max_value=6, writable=True
+    )
+    # Mischerhysterese 5..20 in 0.1 K -> 0.5..2.0 K
+    MIXER_HYSTERESIS = _reg(
+        93,
+        scale=0.1,
+        unit="K",
+        signed=False,
+        min_value=0.5,
+        max_value=2.0,
+        writable=True,
+    )
+    # Maximale Temperatur 30..70 degC
+    MAX_TEMPERATURE = _reg(
+        5088, unit="°C", signed=False, min_value=30, max_value=70, writable=True
+    )
+    # Kuehlung Raumsolltemperatur: raw 0..30 -> 15.0..30.0 degC in 0.5 K steps
+    COOLING_ROOM_SETPOINT = _reg(
+        5089,
+        scale=0.5,
+        offset=15.0,
+        unit="°C",
+        signed=False,
+        min_value=15.0,
+        max_value=30.0,
+        writable=True,
+    )
+
+
+HC2_SETTINGS_DATAPOINTS: dict[str, dict[SoftwareVersion, RegisterDefinition]] = {
+    "hc2_heating_curve_endpoint": HC2SettingsRegisters.HEATING_CURVE_ENDPOINT,
+    "hc2_fixed_setpoint": HC2SettingsRegisters.FIXED_SETPOINT,
+    "hc2_parallel_shift": HC2SettingsRegisters.PARALLEL_SHIFT,
+    "hc2_mixer_runtime": HC2SettingsRegisters.MIXER_RUNTIME,
+    "hc2_mixer_hysteresis": HC2SettingsRegisters.MIXER_HYSTERESIS,
+    "hc2_max_temperature": HC2SettingsRegisters.MAX_TEMPERATURE,
+    "hc2_cooling_room_setpoint": HC2SettingsRegisters.COOLING_ROOM_SETPOINT,
+}
+"""HC2 settings; NOT part of REGISTER_DATAPOINTS because they are only valid
+after the selector (5082) has been set to 2 (DimplexModbusClient.read_hc_settings)."""
+
+
 REGISTER_DATAPOINTS: dict[str, dict[SoftwareVersion, RegisterDefinition]] = {
     # Operating data
     "outside_temperature": OperatingDataRegisters.OUTSIDE_TEMPERATURE,

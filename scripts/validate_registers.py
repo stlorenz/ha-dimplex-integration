@@ -48,6 +48,8 @@ from custom_components.dimplex.modbus_registers import (
 )
 from custom_components.dimplex.modbus_registers_extended import (
     COIL_DATAPOINTS,
+    HC2_SETTINGS_DATAPOINTS,
+    HC_SETTINGS_SELECTOR,
     REGISTER_DATAPOINTS,
     RegisterDefinition,
     get_coil_address,
@@ -281,6 +283,58 @@ async def validate(reader: Reader, version: SoftwareVersion) -> dict[str, Any]:
         )
         if state is None:
             report["problems"].append(f"coil {key} ({addr}): read failed")
+
+    # --- HC2 / HC3 shared settings block ---------------------------------
+    # The wiki page lists 5082 as selector in its table but mentions 209 in
+    # the intro; both are printed. Nothing is written here.
+    sel = get_register_definition(HC_SETTINGS_SELECTOR, version)
+    if sel is not None and sel.address is not None:
+        print("\n== Heating circuit 2/3 settings (shared block, selector 5082) ==")
+        words = await reader.holding(sel.address)
+        selector = words[0] if words else None
+        words209 = await reader.holding(209)
+        print(
+            f"  selector reg 5082 = {selector!s:>4}   (2 = 2. Heizkreis, 3 = 3. Heizkreis)"
+        )
+        print(
+            f"  reg 209           = {words209[0] if words209 else '-'!s:>4}   (wiki intro names this as selector)"
+        )
+        report["hc_settings"] = {
+            "selector_5082": selector,
+            "reg_209": words209[0] if words209 else None,
+        }
+        if selector not in (2, 3):
+            report["problems"].append(
+                f"hc settings selector (5082) = {selector}, expected 2 or 3"
+            )
+        circuit = f"HC{selector}" if selector in (2, 3) else "HC?"
+        print(f"  block currently shows {circuit}:")
+        for key, reg_map in HC2_SETTINGS_DATAPOINTS.items():
+            reg = get_register_definition(reg_map, version)
+            if reg is None:
+                continue
+            words = await reader.holding(reg.address, reg.size)
+            if words is None:
+                verdict, value_str, value = "READ-FAILED", "-", None
+            else:
+                value = scale_value(words[0], reg)
+                verdict = _verdict(value, reg)
+                value_str = f"{value:.1f}".rstrip("0").rstrip(".")
+            rng = f"{reg.min_value}..{reg.max_value}"
+            mark = "" if verdict in ("ok", "no-range") else "  <--"
+            print(
+                f"  {key:36s} {reg.address:5d} {words!s:>14s} {value_str:>12s} {reg.unit:5s} {rng:16s} {verdict}{mark}"
+            )
+            report["hc_settings"][key] = {
+                "address": reg.address,
+                "raw": words,
+                "value": value,
+                "verdict": verdict,
+            }
+            if verdict not in ("ok", "no-range"):
+                report["problems"].append(
+                    f"{key} (reg {reg.address}): {verdict} value={value}"
+                )
 
     # --- wiki cross check 5 vs 9 -----------------------------------------
     print("\n== Register 5 vs 9 (wiki: 5 = Vorlauf R9, 9 = 2. Heizkreis R5) ==")

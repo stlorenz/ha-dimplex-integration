@@ -22,6 +22,8 @@ from .coordinator import DimplexDataUpdateCoordinator
 from .entity import build_device_info
 from .modbus_registers import SoftwareVersion
 from .modbus_registers_extended import (
+    HC2_SELECTOR_VALUE,
+    HC2SettingsRegisters,
     RegisterDefinition,
     SettingsRegisters,
     get_register_definition,
@@ -38,6 +40,10 @@ class DimplexNumberDescription(NumberEntityDescription):
     data_key: str
     requires_dhw: bool = False
     requires_cooling: bool = False
+    requires_second_hc: bool = False
+    select_circuit: int | None = None
+    """Heating circuit that must be selected in register 5082 before the
+    register is valid (HC2/HC3 share one settings block)."""
 
 
 NUMBER_DESCRIPTIONS: tuple[DimplexNumberDescription, ...] = (
@@ -187,6 +193,121 @@ NUMBER_DESCRIPTIONS: tuple[DimplexNumberDescription, ...] = (
         mode=NumberMode.BOX,
         entity_category=EntityCategory.CONFIG,
     ),
+    # --- Heating circuit 2 (wiki "Einstellungen 2./3. Heiz-/Kuehlkreis") ---
+    # Shared block behind selector register 5082 (see modbus_registers_extended).
+    DimplexNumberDescription(
+        key="hc2_parallel_shift",
+        translation_key="hc2_parallel_shift",
+        data_key="hc2_parallel_shift",
+        register=HC2SettingsRegisters.PARALLEL_SHIFT,
+        requires_second_hc=True,
+        select_circuit=HC2_SELECTOR_VALUE,
+        icon="mdi:chart-bell-curve-cumulative",
+        native_unit_of_measurement="K",
+        native_min_value=-19,
+        native_max_value=19,
+        native_step=1,
+        mode=NumberMode.SLIDER,
+        entity_category=EntityCategory.CONFIG,
+    ),
+    DimplexNumberDescription(
+        key="hc2_heating_curve_endpoint",
+        translation_key="hc2_heating_curve_endpoint",
+        data_key="hc2_heating_curve_endpoint",
+        register=HC2SettingsRegisters.HEATING_CURVE_ENDPOINT,
+        requires_second_hc=True,
+        select_circuit=HC2_SELECTOR_VALUE,
+        icon="mdi:chart-line",
+        device_class=NumberDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=20,
+        native_max_value=70,
+        native_step=1,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+    ),
+    DimplexNumberDescription(
+        key="hc2_max_temperature",
+        translation_key="hc2_max_temperature",
+        data_key="hc2_max_temperature",
+        register=HC2SettingsRegisters.MAX_TEMPERATURE,
+        requires_second_hc=True,
+        select_circuit=HC2_SELECTOR_VALUE,
+        icon="mdi:thermometer-high",
+        device_class=NumberDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=30,
+        native_max_value=70,
+        native_step=1,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+    ),
+    DimplexNumberDescription(
+        key="hc2_fixed_setpoint",
+        translation_key="hc2_fixed_setpoint",
+        data_key="hc2_fixed_setpoint",
+        register=HC2SettingsRegisters.FIXED_SETPOINT,
+        requires_second_hc=True,
+        select_circuit=HC2_SELECTOR_VALUE,
+        icon="mdi:thermometer-lines",
+        device_class=NumberDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=20,
+        native_max_value=60,
+        native_step=1,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+        entity_registry_enabled_default=False,
+    ),
+    DimplexNumberDescription(
+        key="hc2_mixer_runtime",
+        translation_key="hc2_mixer_runtime",
+        data_key="hc2_mixer_runtime",
+        register=HC2SettingsRegisters.MIXER_RUNTIME,
+        requires_second_hc=True,
+        select_circuit=HC2_SELECTOR_VALUE,
+        icon="mdi:valve",
+        native_unit_of_measurement="min",
+        native_min_value=1,
+        native_max_value=6,
+        native_step=1,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+        entity_registry_enabled_default=False,
+    ),
+    DimplexNumberDescription(
+        key="hc2_mixer_hysteresis",
+        translation_key="hc2_mixer_hysteresis",
+        data_key="hc2_mixer_hysteresis",
+        register=HC2SettingsRegisters.MIXER_HYSTERESIS,
+        requires_second_hc=True,
+        select_circuit=HC2_SELECTOR_VALUE,
+        icon="mdi:delta",
+        native_unit_of_measurement="K",
+        native_min_value=0.5,
+        native_max_value=2.0,
+        native_step=0.1,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+        entity_registry_enabled_default=False,
+    ),
+    DimplexNumberDescription(
+        key="hc2_cooling_room_setpoint",
+        translation_key="hc2_cooling_room_setpoint",
+        data_key="hc2_cooling_room_setpoint",
+        register=HC2SettingsRegisters.COOLING_ROOM_SETPOINT,
+        requires_second_hc=True,
+        requires_cooling=True,
+        select_circuit=HC2_SELECTOR_VALUE,
+        icon="mdi:snowflake-thermometer",
+        device_class=NumberDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        native_min_value=15,
+        native_max_value=30,
+        native_step=0.5,
+        mode=NumberMode.BOX,
+        entity_category=EntityCategory.CONFIG,
+    ),
 )
 
 
@@ -203,6 +324,8 @@ async def async_setup_entry(
         if description.requires_dhw and not coordinator.dhw_enabled:
             continue
         if description.requires_cooling and not coordinator.cooling_enabled:
+            continue
+        if description.requires_second_hc and not coordinator.second_hc_enabled:
             continue
         reg_def = get_register_definition(
             description.register, coordinator.software_version
@@ -240,6 +363,16 @@ class DimplexNumber(CoordinatorEntity[DimplexDataUpdateCoordinator], NumberEntit
         self._attr_device_info = build_device_info(coordinator, entry)
 
     @property
+    def available(self) -> bool:
+        """Selector-based settings are unavailable until their block was read."""
+        if not super().available:
+            return False
+        if self.entity_description.select_circuit is None:
+            return True
+        data = self.coordinator.data or {}
+        return self.entity_description.data_key in data
+
+    @property
     def native_value(self) -> float | None:
         """Return the current value read from the device."""
         if self.coordinator.data is None:
@@ -258,6 +391,20 @@ class DimplexNumber(CoordinatorEntity[DimplexDataUpdateCoordinator], NumberEntit
             return
 
         if self._reg_def.address is None:
+            return
+
+        circuit = self.entity_description.select_circuit
+        if (
+            circuit is not None
+            and not await self.coordinator.client.select_heating_circuit(
+                self.coordinator.software_version, circuit
+            )
+        ):
+            _LOGGER.error(
+                "Cannot write %s: heating circuit %s could not be selected (5082)",
+                self.entity_description.key,
+                circuit,
+            )
             return
 
         raw_value = self._reg_def.to_raw(value)

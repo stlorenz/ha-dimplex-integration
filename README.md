@@ -78,6 +78,26 @@ Heating circuit 1 ("Modbus TCP - Einstellungen 1. Heiz-/Kühlkreis"):
 | `number.<name>_hc1_cooling_setpoint` | 5043 | 10..35 °C (cooling only) |
 | `number.<name>_hc1_cooling_setpoint_at_30_c_outside` | 5134 | 10..35 °C (cooling, L/M only) |
 
+Heating circuit 2 ("Modbus TCP - Einstellungen 2./3. Heiz-/Kühlkreis"), only
+with **Second Heating Circuit** enabled in the options:
+
+| Entity | Register | Range |
+|---|---|---|
+| `number.<name>_hc2_heating_curve_parallel_shift` | 5086 | −19..+19 K |
+| `number.<name>_hc2_heating_curve_endpoint` | 5084 | 20..70 °C |
+| `number.<name>_hc2_maximum_flow_temperature` | 5088 | 30..70 °C |
+| `number.<name>_hc2_fixed_setpoint` | 5085 | 20..60 °C (disabled by default) |
+| `number.<name>_hc2_mixer_runtime` | 5087 | 1..6 min (disabled by default) |
+| `number.<name>_hc2_mixer_hysteresis` | 93 | 0.5..2.0 K (disabled by default) |
+| `number.<name>_hc2_cooling_room_setpoint` | 5089 | 15..30 °C in 0.5 K (cooling only) |
+
+Heating circuits 2 and 3 share this register block; register 5082 selects
+which circuit it refers to. The integration reads the block only while 5082
+is 2. If the WPM has 3 selected, the HC2 entities stay unavailable until
+**Write Enable** is turned on once; the integration then writes 2 to 5082 and
+keeps reading. Every HC2 write re-checks the selector first. HC3 settings are
+not exposed yet (they would need the selector toggled on every poll).
+
 Writes require the **Write Enable** switch. The WPM applies a new value with a
 short delay (a few seconds up to one poll interval); the entity shows the new
 value optimistically until the next poll confirms it.
@@ -200,7 +220,7 @@ registers is in [docs/REGISTER_MAPPING_GUIDE.md](docs/REGISTER_MAPPING_GUIDE.md)
   Rarely used outputs are disabled by default and can be enabled in the entity settings.
 - `climate.dimplex` with room setpoint and Sommer / Winter / Kühlen mode
 - `select.dimplex_operating_mode`
-- Number entities for hot water and heating circuit 1 settings
+- Number entities for hot water, heating circuit 1 and (if enabled) heating circuit 2 settings
 
 #### Services
 - `dimplex.read_holding_registers`, `dimplex.read_input_registers`, `dimplex.write_register` - raw access for mapping work
