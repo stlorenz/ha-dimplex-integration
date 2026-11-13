@@ -262,6 +262,17 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         _LOGGER.warning(
                             "No operating data received, but continuing with system status data"
                         )
+                    # HC2 settings live behind the selector register 5082.
+                    # Switching the selector is a write, so it only happens
+                    # while Write Enable is on; otherwise the block is read
+                    # only if it already refers to HC2.
+                    if self.second_hc_enabled:
+                        data.update(
+                            await self.client.read_hc_settings(
+                                self.software_version,
+                                allow_select=self._write_enabled,
+                            )
+                        )
             except TimeoutError:
                 _LOGGER.warning(
                     "Timeout reading operating data, but continuing with system status data"

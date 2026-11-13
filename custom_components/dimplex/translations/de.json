@@ -269,6 +269,13 @@
       "hc1_parallel_shift": { "name": "HK1 Parallelverschiebung Heizkurve" },
       "hc1_heating_curve_endpoint": { "name": "HK1 Heizkurvenendpunkt" },
       "hc1_fixed_setpoint": { "name": "HK1 Festwert-Solltemperatur" },
+      "hc2_parallel_shift": { "name": "HK2 Parallelverschiebung Heizkurve" },
+      "hc2_heating_curve_endpoint": { "name": "HK2 Heizkurvenendpunkt" },
+      "hc2_max_temperature": { "name": "HK2 Maximale Vorlauftemperatur" },
+      "hc2_fixed_setpoint": { "name": "HK2 Festwert-Solltemperatur" },
+      "hc2_mixer_runtime": { "name": "HK2 Mischerlaufzeit" },
+      "hc2_mixer_hysteresis": { "name": "HK2 Mischerhysterese" },
+      "hc2_cooling_room_setpoint": { "name": "HK2 Raumsolltemperatur Kühlung" },
       "hc1_hysteresis": { "name": "HK1 Hysterese" },
       "hc1_cooling_setpoint": { "name": "HK1 Solltemperatur Kühlen" },
       "hc1_cooling_setpoint_30": { "name": "HK1 Solltemperatur Kühlen bei 30 °C AT" }

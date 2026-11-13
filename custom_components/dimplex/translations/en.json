@@ -269,6 +269,13 @@
       "hc1_parallel_shift": { "name": "HC1 Heating Curve Parallel Shift" },
       "hc1_heating_curve_endpoint": { "name": "HC1 Heating Curve Endpoint" },
       "hc1_fixed_setpoint": { "name": "HC1 Fixed Setpoint" },
+      "hc2_parallel_shift": { "name": "HC2 Heating Curve Parallel Shift" },
+      "hc2_heating_curve_endpoint": { "name": "HC2 Heating Curve Endpoint" },
+      "hc2_max_temperature": { "name": "HC2 Maximum Flow Temperature" },
+      "hc2_fixed_setpoint": { "name": "HC2 Fixed Setpoint" },
+      "hc2_mixer_runtime": { "name": "HC2 Mixer Runtime" },
+      "hc2_mixer_hysteresis": { "name": "HC2 Mixer Hysteresis" },
+      "hc2_cooling_room_setpoint": { "name": "HC2 Cooling Room Setpoint" },
       "hc1_hysteresis": { "name": "HC1 Hysteresis" },
       "hc1_cooling_setpoint": { "name": "HC1 Cooling Setpoint" },
       "hc1_cooling_setpoint_30": { "name": "HC1 Cooling Setpoint at 30 °C Outside" }

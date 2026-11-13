@@ -230,3 +230,57 @@ def test_computed_datapoints_are_not_read_from_registers():
     for key in COMPUTED_DATAPOINTS:
         assert key not in REGISTER_DATAPOINTS
         assert key not in COIL_DATAPOINTS
+
+
+# ----------------------------------------------------------- HC2 settings
+def test_hc2_settings_follow_the_wiki_page():
+    """Wiki "Einstellungen 2./3. Heiz-/Kuehlkreis": shared block behind 5082."""
+    from custom_components.dimplex.modbus_registers_extended import (
+        HC2_SELECTOR_VALUE,
+        HC2_SETTINGS_DATAPOINTS,
+        HC3_SELECTOR_VALUE,
+        HC_SETTINGS_SELECTOR,
+        REGISTER_DATAPOINTS,
+        HC2SettingsRegisters,
+    )
+
+    sel = get_register_definition(HC_SETTINGS_SELECTOR, SoftwareVersion.L_M)
+    assert sel is not None and sel.address == 5082
+    assert (sel.min_value, sel.max_value) == (2, 3)
+    assert (HC2_SELECTOR_VALUE, HC3_SELECTOR_VALUE) == (2, 3)
+    assert get_register_definition(HC_SETTINGS_SELECTOR, SoftwareVersion.H) is None
+
+    expected = {
+        "hc2_heating_curve_endpoint": (5084, 20, 70),
+        "hc2_fixed_setpoint": (5085, 20, 60),
+        "hc2_parallel_shift": (5086, -19, 19),
+        "hc2_mixer_runtime": (5087, 1, 6),
+        "hc2_mixer_hysteresis": (93, 0.5, 2.0),
+        "hc2_max_temperature": (5088, 30, 70),
+        "hc2_cooling_room_setpoint": (5089, 15.0, 30.0),
+    }
+    assert set(HC2_SETTINGS_DATAPOINTS) == set(expected)
+    for key, (addr, lo, hi) in expected.items():
+        reg = get_register_definition(HC2_SETTINGS_DATAPOINTS[key], SoftwareVersion.L_M)
+        assert reg is not None, key
+        assert (reg.address, reg.min_value, reg.max_value) == (addr, lo, hi), key
+        assert reg.writable, key
+        # the block must never be read without the selector -> not in the plain loop
+        assert key not in REGISTER_DATAPOINTS
+
+    shift = get_register_definition(
+        HC2SettingsRegisters.PARALLEL_SHIFT, SoftwareVersion.J
+    )
+    assert shift is not None
+    assert (
+        scale_value(19, shift) == 0
+        and shift.to_raw(-19) == 0
+        and shift.to_raw(19) == 38
+    )
+
+    cool = get_register_definition(
+        HC2SettingsRegisters.COOLING_ROOM_SETPOINT, SoftwareVersion.L_M
+    )
+    assert cool is not None
+    assert scale_value(0, cool) == 15.0 and scale_value(30, cool) == 30.0
+    assert cool.to_raw(22.5) == 15

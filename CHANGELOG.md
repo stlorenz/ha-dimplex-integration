@@ -4,7 +4,17 @@ All notable changes to this integration are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.0] - 2026-11-13
+
+### Added
+- Settings of heating circuit 2 as number entities (parallel shift, heating
+  curve endpoint, maximum flow temperature, fixed setpoint, mixer runtime,
+  mixer hysteresis, cooling room setpoint) from the wiki page "Einstellungen
+  2./3. Heiz-/Kühlkreis". HC2 and HC3 share one register block selected via
+  register 5082; the integration only switches the selector while Write
+  Enable is on and re-checks it before every write. HC3 is not exposed yet.
+- `scripts/validate_registers.py` prints the shared HC2/HC3 block together
+  with the selector (5082) and register 209 for cross-checking the wiki.
 
 ### Fixed
 - Climate action showed "Off" next to mode "Heat" whenever the compressor was
@@ -89,7 +99,7 @@ All notable changes to this integration are documented here. The format follows
 - Energy and runtime metrics, COP with smoothing, raw register services.
 - pymodbus 3.8 support, availability checks for sensors and binary sensors.
 
-[Unreleased]: https://github.com/stlorenz/ha-dimplex-integration/compare/v0.2.0...HEAD
+[0.3.0]: https://github.com/stlorenz/ha-dimplex-integration/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/stlorenz/ha-dimplex-integration/compare/v0.1.8...v0.2.0
 [0.1.9 - 0.1.11]: https://github.com/stlorenz/ha-dimplex-integration/compare/v0.1.8...d4cc757
 [0.1.0 - 0.1.8]: https://github.com/stlorenz/ha-dimplex-integration/compare/v0.1.0...v0.1.8
