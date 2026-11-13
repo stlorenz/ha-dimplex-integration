@@ -3,7 +3,7 @@
 This document tracks the implementation status of the Dimplex Heat Pump Home
 Assistant integration against the [Product Requirements Document](PRD.md).
 
-**Last Updated:** November 9, 2026
+**Last Updated:** November 13, 2026
 **Version:** 0.2.0 (main, unreleased changes towards 1.0 listed in CHANGELOG.md)
 **Reference hardware:** LA 1422C with NWPM Touch, WPM software L/M
 
@@ -101,19 +101,23 @@ Code side (done on `main`): hassfest + HACS validation in CI, diagnostics and
 climate fully covered by tests, reconfigure flow, CHANGELOG, documentation of
 the Write Enable behaviour and of the unexplained coils 59/60.
 
-Hardware side (open, see checklist below): every write path has to be
-confirmed once on the LA 1422C, plus a reconnect test and a multi-day soak
-run at the default 30 s interval without connection drops or log spam.
+Hardware side: every write path, the reconnect behaviour and the reconfigure
+flow have been confirmed on the LA 1422C (2026-11-13). The only open item is
+the multi-day soak run at the default 30 s interval; 1.0.0 is tagged once it
+passes.
 
 ## Testing checklist (manual, on hardware)
 
+Verified on the LA 1422C (WPM L/M) by Stefan Lorenz; dates are the day of the check.
+
 - [x] `scripts/validate_registers.py --host <ip>` reports no problems (2026-11-09)
 - [x] Flow / return temperature match the WPM display (2026-11-09, compressor running)
-- [x] Hot water setpoint write (number entity) is accepted and read back
-- [ ] HC1 room setpoint write via climate entity is accepted
-- [ x] Operating mode select: Winter ↔ Sommer round trip
-- [x ] Compressor binary sensor follows the compressor
-- [ ] Parallel shift write (number entity) is reflected on the WPM display
-- [ ] Connection recovery after unplugging the NWPM Touch for a minute (backoff visible in the log)
-- [ ] Reconfigure to a wrong IP shows "cannot connect", to the right IP keeps all entities
-- [ ] Several days of polling at 30 s without connection drops, memory growth or repeated warnings
+- [x] Hot water setpoint write (number entity) is accepted and read back (2026-11-13)
+- [x] HC1 room setpoint write via climate entity is accepted (2026-11-13)
+- [x] Operating mode select: Winter ↔ Sommer round trip, change visible on the WPM (2026-11-13)
+- [x] Compressor binary sensor follows the compressor (2026-11-13)
+- [x] Parallel shift write (number entity) is reflected on the WPM display (2026-11-13)
+- [x] Connection recovery after unplugging the NWPM Touch for a minute, backoff visible in the log (2026-11-13)
+- [x] Reconfigure to a wrong IP shows "cannot connect", to the right IP keeps all entities (2026-11-13)
+- [x] Climate action shows Idle with the compressor off in Winter, Off in Sommer (2026-11-13, after PR #6)
+- [ ] Several days of polling at 30 s without connection drops, memory growth or repeated warnings (started 2026-11-13)
