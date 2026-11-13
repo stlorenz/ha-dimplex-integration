@@ -37,6 +37,7 @@ _HEATING_STATES = (
     "defrost",
     "heat_pump_on_defrost",
 )
+_DEFROST_STATES = ("defrost", "heat_pump_on_defrost")
 _DHW_STATES = (
     "hot_water",
     "heat_pump_on_hot_water",
@@ -44,6 +45,17 @@ _DHW_STATES = (
 )
 _POOL_STATES = ("pool", "heat_pump_on_pool", "heat_pump_on_pool_auxiliary")
 _COOLING_STATES = ("cooling", "passive_cooling", "cooling_mode")
+# Status values that imply a running compressor; only used when the output
+# coils are not available (software H / J without coil support).
+_RUNNING_STATES = _HEATING_STATES + _DHW_STATES + _POOL_STATES + _COOLING_STATES
+
+
+def _compressor_running(data: dict[str, Any]) -> bool:
+    """Prefer the compressor output coils, fall back to the status message."""
+    if "compressor_1" in data or "compressor_2" in data:
+        return bool(data.get("compressor_1")) or bool(data.get("compressor_2"))
+    return data.get("status") in _RUNNING_STATES
+
 
 # Betriebsmodus (5015) <-> HA HVAC mode. "Sommer" switches space heating off
 # while domestic hot water stays active, which is the closest match to OFF.
@@ -80,8 +92,13 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
       without a room sensor the WPM uses it as the room setpoint for the
       heating curve.
     * HVAC mode: register 5015 "Betriebsmodus" (Sommer/Winter/.../Kuehlen).
-    * Current temperature: room temperature 1 if a room sensor is present,
-      otherwise the return temperature.
+    * Current temperature: room temperature 1 if a room sensor is present.
+      Without one the WPM reports 0 and the entity shows no current
+      temperature (flow / return are exposed as attributes instead).
+    * HVAC action: Off in Sommer mode, Heating / Cooling / Defrosting only
+      while a compressor runs, otherwise Idle. The WPM status alone is not
+      enough: on L/M it reports "Aus" (1) whenever the compressor is idle,
+      even in Winter mode.
 
     Both control registers are only present on WPM software J/L/M; on H the
     entity is display-only.
@@ -155,15 +172,26 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
 
     @property
     def current_temperature(self) -> float | None:
-        """Return room temperature 1, falling back to the return temperature."""
+        """Return room temperature 1, or None if no room sensor is fitted."""
         data = self.coordinator.data
         if not data:
             return None
-        # The WPM reports exactly 0 when no room sensor is connected.
+        # The WPM reports exactly 0 when no room sensor is connected. Showing
+        # the return temperature here instead would sit next to a *room*
+        # setpoint and mislead; it is available as an attribute.
         temp = data.get("room_temperature")
-        if not temp:
-            temp = data.get("return_temperature")
-        return temp
+        return temp if temp else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose the hydraulic temperatures the WPM actually regulates on."""
+        data = self.coordinator.data or {}
+        return {
+            "flow_temperature": data.get("flow_temperature"),
+            "return_temperature": data.get("return_temperature"),
+            "return_setpoint": data.get("return_setpoint"),
+            "operating_mode": data.get("operating_mode"),
+        }
 
     @property
     def target_temperature(self) -> float | None:
@@ -192,18 +220,25 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
 
     @property
     def hvac_action(self) -> HVACAction | None:
-        """Return what the heat pump is doing right now."""
+        """Return what the heat pump is doing for heating circuit 1 right now."""
         data = self.coordinator.data
         if not data:
             return None
 
-        status = data.get("status", "off")
-        if status == "off":
+        if self.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
+
+        if not _compressor_running(data):
+            return HVACAction.IDLE
+
+        status = data.get("status", "off")
+        if status in _DEFROST_STATES:
+            return HVACAction.DEFROSTING
         if status in _COOLING_STATES:
             return HVACAction.COOLING
-        if status in _HEATING_STATES or status in _DHW_STATES or status in _POOL_STATES:
+        if status in _HEATING_STATES:
             return HVACAction.HEATING
+        # Compressor runs for hot water or the pool: nothing reaches HC1.
         return HVACAction.IDLE
 
     @property
