@@ -284,3 +284,23 @@ def test_hc2_settings_follow_the_wiki_page():
     assert cool is not None
     assert scale_value(0, cool) == 15.0 and scale_value(30, cool) == 30.0
     assert cool.to_raw(22.5) == 15
+
+
+def test_controller_software_format_and_family():
+    from custom_components.dimplex.modbus_registers_extended import (
+        controller_software_family,
+        format_controller_software,
+    )
+
+    assert format_controller_software([13, 3, 16]) == "M3.16"  # wiki example
+    assert format_controller_software([12, 22, 9]) == "L22.9"
+    assert format_controller_software([0, 3, 16]) is None  # 0 = "--"
+    assert format_controller_software([27, 1, 1]) is None
+    assert format_controller_software([13, 3]) is None
+    assert format_controller_software(None) is None
+    assert controller_software_family("M3.16") is SoftwareVersion.L_M
+    assert controller_software_family("L22.9") is SoftwareVersion.L_M
+    assert controller_software_family("J4.1") is SoftwareVersion.J
+    assert controller_software_family("H1.0") is SoftwareVersion.H
+    assert controller_software_family("X1.0") is None
+    assert controller_software_family(None) is None

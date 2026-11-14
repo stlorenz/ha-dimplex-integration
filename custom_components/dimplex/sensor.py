@@ -224,6 +224,14 @@ STATUS_SENSOR_TYPES: tuple[DimplexSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda data: data.get("sensor_error_code"),
     ),
+    DimplexSensorEntityDescription(
+        key="controller_software",
+        translation_key="controller_software",
+        name="WPM Software",
+        icon="mdi:chip",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda data: data.get("controller_software"),
+    ),
 )
 
 

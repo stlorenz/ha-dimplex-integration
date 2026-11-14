@@ -172,6 +172,7 @@
         }
       },
       "sensor_error_code": { "name": "Sensor Error Code" },
+      "controller_software": { "name": "WPM Software" },
       "flow_temperature": { "name": "Flow Temperature" },
       "return_temperature": { "name": "Return Temperature" },
       "outside_temperature": { "name": "Outside Temperature" },

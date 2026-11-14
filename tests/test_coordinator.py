@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -346,3 +347,57 @@ async def test_coordinator_hold_keeps_key_missing_from_poll(hass: HomeAssistant)
     coordinator._fetch = AsyncMock(return_value={"connected": True})
     data = await coordinator._async_update_data()
     assert data["hc2_parallel_shift"] == 3
+
+
+@pytest.mark.asyncio
+async def test_coordinator_reads_controller_software_once(hass: HomeAssistant, caplog):
+    """Registers 65..67 are read until they answer; mismatch is warned once."""
+    coordinator = DimplexDataUpdateCoordinator(
+        hass, host="192.168.1.100", port=502, software_version=SoftwareVersion.J
+    )
+    type(coordinator.client).is_connected = property(lambda self: True)
+    coordinator.client.read_system_status = AsyncMock(
+        return_value={"status_code": 2, "lock_code": 0, "error_code": 0}
+    )
+    coordinator.client.read_holding_registers = AsyncMock(return_value=[0])
+    coordinator.client.read_operating_data = AsyncMock(return_value={})
+    coordinator.client.read_controller_software = AsyncMock(side_effect=[None, "M3.16"])
+
+    data = await coordinator._async_update_data()
+    assert "controller_software" not in data
+
+    with caplog.at_level(logging.WARNING):
+        data = await coordinator._async_update_data()
+    assert data["controller_software"] == "M3.16"
+    assert coordinator.controller_software == "M3.16"
+    assert "reports software M3.16" in caplog.text
+    assert "configured for the J register map" in caplog.text
+
+    # third poll: no further read, value still present
+    data = await coordinator._async_update_data()
+    assert coordinator.client.read_controller_software.await_count == 2
+    assert data["controller_software"] == "M3.16"
+
+
+@pytest.mark.asyncio
+async def test_coordinator_controller_software_matching_family_no_warning(
+    hass: HomeAssistant, caplog
+):
+    coordinator = DimplexDataUpdateCoordinator(hass, host="192.168.1.100", port=502)
+    type(coordinator.client).is_connected = property(lambda self: True)
+    coordinator.client.read_system_status = AsyncMock(
+        return_value={"status_code": 2, "lock_code": 0, "error_code": 0}
+    )
+    coordinator.client.read_holding_registers = AsyncMock(return_value=[0])
+    coordinator.client.read_operating_data = AsyncMock(return_value={})
+    coordinator.client.read_controller_software = AsyncMock(return_value="L22.9")
+    with caplog.at_level(logging.INFO):
+        await coordinator._async_update_data()
+    assert "WPM software version: L22.9" in caplog.text
+    assert "register map" not in caplog.text
+
+    # a failing read never breaks the poll
+    coordinator.controller_software = None
+    coordinator.client.read_controller_software = AsyncMock(side_effect=OSError)
+    data = await coordinator._async_update_data()
+    assert data["status_code"] == 2

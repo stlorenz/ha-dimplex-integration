@@ -114,6 +114,10 @@ wins and a warning is logged.
 - **Write Enable** is deliberately off after every Home Assistant restart. Turn it
   on in the automation that needs it (and off again afterwards) rather than
   relying on it staying on.
+- The controller's exact software version (registers 65–67, e.g. `M3.16`) is
+  read once and shown in the device info and the diagnostic sensor
+  **WPM Software**. If its letter contradicts the configured register map
+  (H / J / L-M) a warning is logged.
 - Host, port and unit ID can be changed later via **Reconfigure** on the
   integration entry; entity IDs and history are kept.
 

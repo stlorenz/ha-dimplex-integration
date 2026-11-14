@@ -6,6 +6,13 @@ All notable changes to this integration are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- The WPM software version is read from registers 65..67 (wiki page
+  "Energiemanagementsysteme Anbindung", e.g. "M3.16") and shown in the device
+  info and as diagnostic sensor "WPM Software". A warning is logged when the
+  reported letter does not match the configured register map (H / J / L-M).
+  The validation script prints the same registers.
+
 ### Fixed
 - Heat quantity counters (registers 5096/5099/5102/5127, three words each)
   no longer report 0 kWh when the NWPM gateway briefly returns all-zero words
