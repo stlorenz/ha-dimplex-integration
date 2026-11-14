@@ -428,9 +428,8 @@ class DimplexNumber(CoordinatorEntity[DimplexDataUpdateCoordinator], NumberEntit
             raw_value,
             self._reg_def.address,
         )
-        # The WPM applies the value with a short delay; optimistic update
-        # keeps the UI responsive until the next poll confirms it.
-        if self.coordinator.data is not None:
-            self.coordinator.data[self.entity_description.data_key] = value
-            self.async_write_ha_state()
+        # The WPM applies the value with a delay; keep showing the written
+        # value until a poll confirms it (see coordinator.hold_written_value).
+        self.coordinator.hold_written_value(self.entity_description.data_key, value)
+        self.async_write_ha_state()
         await self.coordinator.async_request_refresh()

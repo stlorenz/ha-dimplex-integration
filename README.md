@@ -99,8 +99,10 @@ keeps reading. Every HC2 write re-checks the selector first. HC3 settings are
 not exposed yet (they would need the selector toggled on every poll).
 
 Writes require the **Write Enable** switch. The WPM applies a new value with a
-short delay (a few seconds up to one poll interval); the entity shows the new
-value optimistically until the next poll confirms it.
+delay that can exceed a minute (observed with the heating curve parallel shift
+on an LA 1422C). The entity keeps showing the written value until a poll reads
+it back from the device, for at most 3 minutes; after that the device value
+wins and a warning is logged.
 
 ### Reliability
 - Polling interval configurable (10–300 s, default 30 s) in the integration options

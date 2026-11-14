@@ -14,6 +14,15 @@ from custom_components.dimplex.select import (
 )
 
 
+def _hold(data: dict):
+    """Stand-in for DimplexDataUpdateCoordinator.hold_written_value."""
+
+    def hold(key, value):
+        data[key] = value
+
+    return Mock(side_effect=hold)
+
+
 def _coordinator(
     *,
     software_version=SoftwareVersion.L_M,
@@ -21,12 +30,14 @@ def _coordinator(
     cooling_enabled=False,
     mode="winter",
 ):
+    data = {"connected": True, "operating_mode": mode, "operating_mode_code": 1}
     return SimpleNamespace(
         software_version=software_version,
         write_enabled=write_enabled,
         cooling_enabled=cooling_enabled,
         model_name="LA 1422C (Air/Water)",
-        data={"connected": True, "operating_mode": mode, "operating_mode_code": 1},
+        data=data,
+        hold_written_value=_hold(data),
         client=SimpleNamespace(write_register=AsyncMock(return_value=True)),
         async_request_refresh=AsyncMock(),
         last_update_success=True,

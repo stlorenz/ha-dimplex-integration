@@ -7,6 +7,11 @@ All notable changes to this integration are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- Written settings (numbers, operating mode, climate setpoint) no longer snap
+  back to the old value in Home Assistant while the WPM is still applying the
+  write. The written value is shown until the device reports it (at most
+  3 minutes). The heating curve parallel shift in particular takes the WPM
+  well over a poll interval to apply.
 - The first page of the options dialog (model, software version, polling
   interval) now shows a "Next" button instead of "Submit", so it is clear
   that the feature switches (cooling, DHW, pool, second heating circuit) are

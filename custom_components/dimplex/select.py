@@ -108,8 +108,7 @@ class DimplexOperatingModeSelect(
             _LOGGER.error("Failed to write operating mode %s (%d)", option, value)
             return
 
-        if self.coordinator.data is not None:
-            self.coordinator.data["operating_mode"] = option
-            self.coordinator.data["operating_mode_code"] = value
-            self.async_write_ha_state()
+        self.coordinator.hold_written_value("operating_mode", option)
+        self.coordinator.hold_written_value("operating_mode_code", value)
+        self.async_write_ha_state()
         await self.coordinator.async_request_refresh()

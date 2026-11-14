@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import timedelta
 from typing import Any
 
@@ -31,6 +32,12 @@ from .modbus_registers import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# How long a just-written value is shown instead of the device's read-back.
+# The NWPM Touch hands settings writes (5000 range) to the WPM with a delay;
+# reading the register right after the write still returns the old value,
+# sometimes for more than a minute.
+WRITE_HOLD_SECONDS = 180
 
 
 class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -77,6 +84,8 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._write_enabled = False  # Default: read-only mode
         self._base_interval = timedelta(seconds=scan_interval)
         self._consecutive_failures = 0
+        # data key -> (written value, monotonic deadline)
+        self._pending_writes: dict[str, tuple[Any, float]] = {}
 
         super().__init__(
             hass,
@@ -147,6 +156,39 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "enabled" if enabled else "disabled (read-only)",
         )
 
+    # ------------------------------------------------------------ writes
+    @callback
+    def hold_written_value(self, key: str, value: Any) -> None:
+        """Show a just-written value until the device confirms it.
+
+        The WPM applies a write with a delay. Without this, the refresh
+        right after the write read the old value back and the entity
+        snapped back in the UI until a later poll picked up the new value.
+        The written value is kept for WRITE_HOLD_SECONDS or until the
+        device reports it, whichever comes first.
+        """
+        self._pending_writes[key] = (value, time.monotonic() + WRITE_HOLD_SECONDS)
+        if self.data is not None:
+            self.data[key] = value
+
+    def _apply_pending_writes(self, data: dict[str, Any]) -> None:
+        """Overlay unconfirmed writes on freshly polled data."""
+        now = time.monotonic()
+        for key, (value, deadline) in list(self._pending_writes.items()):
+            if key in data and _same_value(data[key], value):
+                del self._pending_writes[key]
+            elif now >= deadline:
+                del self._pending_writes[key]
+                _LOGGER.warning(
+                    "Device still reports %s=%s %ss after %s was written",
+                    key,
+                    data.get(key),
+                    WRITE_HOLD_SECONDS,
+                    value,
+                )
+            else:
+                data[key] = value
+
     # ------------------------------------------------------------ backoff
     def _register_success(self) -> None:
         """Reset the polling interval after a successful update."""
@@ -189,6 +231,7 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self._register_failure()
             raise
         self._register_success()
+        self._apply_pending_writes(data)
         return data
 
     async def _fetch(self) -> dict[str, Any]:
@@ -315,3 +358,10 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Disconnect from the device and stop the coordinator."""
         await self.client.disconnect()
         await super().async_shutdown()
+
+
+def _same_value(reported: Any, written: Any) -> bool:
+    """Compare a polled value with a written one (floats with tolerance)."""
+    if isinstance(reported, (int, float)) and isinstance(written, (int, float)):
+        return abs(float(reported) - float(written)) < 1e-6
+    return reported == written
