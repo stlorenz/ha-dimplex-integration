@@ -533,3 +533,25 @@ async def test_select_heating_circuit_only_writes_when_needed():
     assert await client.select_heating_circuit(SoftwareVersion.L_M, 3) is True
     client.write_register.assert_awaited_once_with(address=5082, value=3)
     assert await client.select_heating_circuit(SoftwareVersion.H, 2) is False
+
+
+@pytest.mark.asyncio
+async def test_total_heat_needs_both_main_counters():
+    """No total while one of heating / hot water energy is missing."""
+    from custom_components.dimplex.modbus_registers import SoftwareVersion
+
+    client = _connected_client()
+    client.read_coils = AsyncMock(return_value=None)
+
+    async def only_heating(address, count=1, slave=None):
+        if address == 5096:
+            return [10, 0, 0]
+        if address == 5099:
+            return [0, 0, 0]  # gateway restart -> no reading
+        return None
+
+    client.read_holding_registers = AsyncMock(side_effect=only_heating)
+    data = await client.read_operating_data(SoftwareVersion.L_M)
+    assert data["heating_energy"] == 10
+    assert "hot_water_energy" not in data
+    assert "total_heat_generated" not in data

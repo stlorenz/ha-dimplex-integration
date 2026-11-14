@@ -630,13 +630,14 @@ class DimplexModbusClient:
         if runtimes:
             data["compressor_runtime_total"] = sum(runtimes)
 
-        heat = [
-            data[k]
-            for k in ("heating_energy", "hot_water_energy", "pool_energy")
-            if k in data
-        ]
-        if heat:
-            data["total_heat_generated"] = sum(heat)
+        # Only sum when both main counters were read; a missing part would
+        # make the total drop and look like a counter reset to the statistics.
+        if "heating_energy" in data and "hot_water_energy" in data:
+            data["total_heat_generated"] = (
+                data["heating_energy"]
+                + data["hot_water_energy"]
+                + data.get("pool_energy", 0)
+            )
 
         mode_code = data.get("operating_mode_code")
         if mode_code is not None:
