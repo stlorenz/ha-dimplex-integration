@@ -296,6 +296,7 @@ class DimplexOptionsFlowHandler(config_entries.OptionsFlow):
                     ),
                 }
             ),
+            last_step=False,  # frontend shows "Next" instead of "Submit"
         )
 
     async def async_step_features(
@@ -440,6 +441,7 @@ class DimplexOptionsFlowHandler(config_entries.OptionsFlow):
             description_placeholders={
                 "model": MODEL_NAMES.get(model, model),
             },
+            last_step=True,
         )
 
 
