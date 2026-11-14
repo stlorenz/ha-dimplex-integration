@@ -109,6 +109,8 @@ wins and a warning is logged.
 - Polling interval configurable (10–300 s, default 30 s) in the integration options
 - Exponential backoff after consecutive failures (up to 5 min), automatic reconnect
 - Register writes are retried once after a network error
+- Energy counters ignore the all-zero reading the gateway returns right after
+  a restart, so the long-term statistics do not double count
 - **Write Enable** is deliberately off after every Home Assistant restart. Turn it
   on in the automation that needs it (and off again afterwards) rather than
   relying on it staying on.

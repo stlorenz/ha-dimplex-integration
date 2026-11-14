@@ -7,6 +7,12 @@ All notable changes to this integration are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- Heat quantity counters (registers 5096/5099/5102/5127, three words each)
+  no longer report 0 kWh when the NWPM gateway briefly returns all-zero words
+  after a restart. Home Assistant took that as a counter reset and added the
+  whole counter a second time to the long-term energy statistics. The total
+  heat sensor is only computed while both heating and hot water counters were
+  read. (Thanks to the ha-dimplex-system-m project for documenting the trap.)
 - Written settings (numbers, operating mode, climate setpoint) no longer snap
   back to the old value in Home Assistant while the WPM is still applying the
   write. The written value is shown until the device reports it (at most

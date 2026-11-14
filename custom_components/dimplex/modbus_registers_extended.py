@@ -293,6 +293,13 @@ def decode_digits_12(registers: list[int]) -> int | None:
     low, mid, high = registers[0], registers[1], registers[2]
     if any(r < 0 or r > 9999 for r in (low, mid, high)):
         return None
+    # The NWPM gateway briefly reports all three words as 0 after a restart.
+    # A total_increasing sensor would take that as a counter reset and the
+    # long-term statistics would add the whole counter a second time once the
+    # real value is back. Treat all-zero as "no reading"; a genuine 0 kWh only
+    # exists before the first kilowatt hour was ever counted.
+    if not (low or mid or high):
+        return None
 
     return (high * 100_000_000) + (mid * 10_000) + low
 

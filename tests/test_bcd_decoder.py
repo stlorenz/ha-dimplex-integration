@@ -13,3 +13,9 @@ def test_decode_digits_12_ok():
 
 def test_decode_digits_12_invalid_chunk():
     assert decode_digits_12([10000, 0, 0]) is None
+
+
+def test_decode_digits_12_all_zero_is_no_reading():
+    """Gateway restart: all words 0 must not look like a counter reset."""
+    assert decode_digits_12([0, 0, 0]) is None
+    assert decode_digits_12([0, 0, 1]) == 100_000_000
