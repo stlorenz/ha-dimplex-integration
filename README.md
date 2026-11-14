@@ -192,12 +192,14 @@ After setup, you can configure which features are installed in your system:
 
 1. Go to Settings → Devices & Services → Dimplex
 2. Click "Configure"
-3. Adjust model, software version and the **polling interval** (10–300 s)
-4. Enable/disable features based on your installation:
+3. Adjust model, software version and the **polling interval** (10–300 s),
+   then click **Next**
+4. On the second page, enable/disable features based on your installation:
    - **Cooling Installed**: Enable if active cooling is installed (not just heat pump capability)
    - **DHW Tank**: Enable if you have a domestic hot water tank
    - **Pool Circuit**: Enable if pool heating is installed
-   - **Second Heating Circuit**: Enable if HC2 is configured
+   - **Second Heating Circuit**: Enable if HC2 is configured (off by default;
+     the HC2 sensors and settings only exist while this is on)
    - **Passive Cooling**: enables the passive cooling temperature sensors
 
 This ensures the UI only shows entities relevant to your specific installation.

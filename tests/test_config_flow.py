@@ -294,6 +294,8 @@ async def test_options_flow_two_steps_persists_overrides(
         init_result = await hass.config_entries.options.async_init(entry.entry_id)
         assert init_result["type"] == FlowResultType.FORM
         assert init_result["step_id"] == "init"
+        # first of two steps -> frontend renders a "Next" button, not "Submit"
+        assert init_result["last_step"] is False
 
         # Step 2: submit model + software version -> features form
         features_result = await hass.config_entries.options.async_configure(
@@ -305,6 +307,7 @@ async def test_options_flow_two_steps_persists_overrides(
         )
         assert features_result["type"] == FlowResultType.FORM
         assert features_result["step_id"] == "features"
+        assert features_result["last_step"] is True
 
         # Step 3: submit feature overrides -> create entry
         done = await hass.config_entries.options.async_configure(
