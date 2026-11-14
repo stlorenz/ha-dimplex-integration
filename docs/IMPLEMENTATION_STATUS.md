@@ -75,7 +75,6 @@ in the wiki and were determined empirically.
 ### Not implemented
 
 - ⬜ Settings for heating circuit 3 (same block as HC2, needs the selector toggled per poll), swimming pool and 2nd heat generator (wiki pages exist, not yet mapped)
-- ⬜ Confirm on hardware that 5082 (table) rather than 209 (wiki intro) is the HC2/HC3 selector; the validation script prints both
 - ⬜ Remaining time programme functions (hot water lock, thermal disinfection, circulation pump)
 - ⬜ Ventilation datapoints (registers 120–127, 5034)
 - ⬜ Firmware version / serial number in device info (no Modbus datapoint documented)
@@ -122,5 +121,6 @@ Verified on the LA 1422C (WPM L/M) by Stefan Lorenz; dates are the day of the ch
 - [x] Connection recovery after unplugging the NWPM Touch for a minute, backoff visible in the log (2026-11-13)
 - [x] Reconfigure to a wrong IP shows "cannot connect", to the right IP keeps all entities (2026-11-13)
 - [x] Climate action shows Idle with the compressor off in Winter, Off in Sommer (2026-11-13, after PR #6)
-- [ ] HC2 settings: values match the WPM display (2. Heizkreis menu), parallel shift write visible on the WPM, selector 5082 stays 2
+- [x] Selector 5082 (not 209) switches the shared block to the 2. Heizkreis; the HC2 entities become available after writing 2 (2026-11-14)
+- [ ] HC2 settings: values match the WPM display (2. Heizkreis menu), parallel shift write visible on the WPM after the apply delay
 - [ ] Several days of polling at 30 s without connection drops, memory growth or repeated warnings (started 2026-11-13)

@@ -92,7 +92,8 @@ with **Second Heating Circuit** enabled in the options:
 | `number.<name>_hc2_cooling_room_setpoint` | 5089 | 15..30 °C in 0.5 K (cooling only) |
 
 Heating circuits 2 and 3 share this register block; register 5082 selects
-which circuit it refers to. The integration reads the block only while 5082
+which circuit it refers to (verified on an LA 1422C; the wiki intro's 209 is
+not the selector there). The integration reads the block only while 5082
 is 2. If the WPM has 3 selected, the HC2 entities stay unavailable until
 **Write Enable** is turned on once; the integration then writes 2 to 5082 and
 keeps reading. Every HC2 write re-checks the selector first. HC3 settings are
