@@ -18,12 +18,22 @@ from custom_components.dimplex.number import (
 )
 
 
+def _hold(data: dict):
+    """Stand-in for DimplexDataUpdateCoordinator.hold_written_value."""
+
+    def hold(key, value):
+        data[key] = value
+
+    return Mock(side_effect=hold)
+
+
 def _coordinator(
     write_enabled: bool = True,
     dhw_enabled: bool = True,
     cooling_enabled: bool = False,
     second_hc_enabled: bool = False,
 ):
+    data = {"hot_water_setpoint_setting": 45.0, "hot_water_max_setpoint": 60.0}
     return SimpleNamespace(
         write_enabled=write_enabled,
         dhw_enabled=dhw_enabled,
@@ -31,7 +41,8 @@ def _coordinator(
         second_hc_enabled=second_hc_enabled,
         software_version=SoftwareVersion.L_M,
         model_name="LA 1422C (Air/Water)",
-        data={"hot_water_setpoint_setting": 45.0, "hot_water_max_setpoint": 60.0},
+        data=data,
+        hold_written_value=_hold(data),
         client=SimpleNamespace(
             write_register=AsyncMock(return_value=True),
             select_heating_circuit=AsyncMock(return_value=True),
@@ -69,6 +80,9 @@ async def test_number_writes_whole_degrees_to_register_5047():
     await ent.async_set_native_value(48)
 
     coordinator.client.write_register.assert_awaited_once_with(address=5047, value=48)
+    coordinator.hold_written_value.assert_called_once_with(
+        "hot_water_setpoint_setting", 48
+    )
     assert coordinator.data["hot_water_setpoint_setting"] == 48
     coordinator.async_request_refresh.assert_awaited_once()
 

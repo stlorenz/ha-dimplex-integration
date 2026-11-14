@@ -18,6 +18,15 @@ def _make_entry(
     return SimpleNamespace(entry_id=entry_id, data={"name": name})
 
 
+def _hold(data: dict):
+    """Stand-in for DimplexDataUpdateCoordinator.hold_written_value."""
+
+    def hold(key, value):
+        data[key] = value
+
+    return Mock(side_effect=hold)
+
+
 def _make_coordinator(
     *,
     software_version: SoftwareVersion,
@@ -25,13 +34,15 @@ def _make_coordinator(
     cooling_enabled: bool = False,
     write_enabled: bool = False,
 ) -> SimpleNamespace:
+    data = {
+        "status": status,
+        "connected": True,
+        "room_temperature": 21.5,
+        "hc1_room_setpoint": 21.0,
+    }
     return SimpleNamespace(
-        data={
-            "status": status,
-            "connected": True,
-            "room_temperature": 21.5,
-            "hc1_room_setpoint": 21.0,
-        },
+        data=data,
+        hold_written_value=_hold(data),
         software_version=software_version,
         cooling_enabled=cooling_enabled,
         write_enabled=write_enabled,

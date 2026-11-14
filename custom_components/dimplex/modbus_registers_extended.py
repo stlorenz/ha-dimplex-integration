@@ -472,9 +472,9 @@ class SettingsRegisters:
 # Both circuits share ONE register block. Register 5082 selects which circuit
 # the block refers to (2 = 2. Heizkreis, 3 = 3. Heizkreis), the same pattern
 # as the time programme selector 5065. The wiki page's intro mentions address
-# 209 for the selector while its table says 5082; the table is used here
-# (consistent with the other 5000-range settings). The validation script
-# prints both so the choice can be checked on a device.
+# 209 for the selector while its table says 5082. Verified 2026-11-14 on an
+# LA 1422C (WPM L/M): writing 2 to 5082 selects the 2. Heizkreis block. The
+# validation script still prints 209 next to it for other models.
 #
 # Only HC2 is exposed as entities. HC3 would require toggling the selector on
 # every poll, which doubles the writes; it is left for a later version.

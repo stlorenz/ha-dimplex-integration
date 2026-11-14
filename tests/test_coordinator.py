@@ -287,3 +287,62 @@ async def test_coordinator_reads_hc2_block_only_with_second_circuit(
             assert data["hc2_parallel_shift"] == 1
         else:
             assert "hc2_parallel_shift" not in data
+
+
+@pytest.mark.asyncio
+async def test_coordinator_holds_written_value_until_device_confirms(
+    hass: HomeAssistant,
+):
+    """A written value survives polls that still return the old value."""
+    from custom_components.dimplex import coordinator as coordinator_module
+
+    coordinator = DimplexDataUpdateCoordinator(hass, host="192.168.1.100", port=502)
+    coordinator.data = {"connected": True, "hc1_parallel_shift": 0.0}
+
+    coordinator.hold_written_value("hc1_parallel_shift", 2)
+    assert coordinator.data["hc1_parallel_shift"] == 2
+
+    # device still reports the old value -> written value stays
+    coordinator._fetch = AsyncMock(
+        return_value={"connected": True, "hc1_parallel_shift": 0.0}
+    )
+    data = await coordinator._async_update_data()
+    assert data["hc1_parallel_shift"] == 2
+
+    # device confirms (as float) -> hold is released, later changes show up
+    coordinator._fetch = AsyncMock(
+        return_value={"connected": True, "hc1_parallel_shift": 2.0}
+    )
+    data = await coordinator._async_update_data()
+    assert data["hc1_parallel_shift"] == 2.0
+    coordinator._fetch = AsyncMock(
+        return_value={"connected": True, "hc1_parallel_shift": -1.0}
+    )
+    data = await coordinator._async_update_data()
+    assert data["hc1_parallel_shift"] == -1.0
+
+    # hold expires if the device never takes the value
+    coordinator.hold_written_value("hc1_parallel_shift", 5)
+    coordinator._fetch = AsyncMock(
+        return_value={"connected": True, "hc1_parallel_shift": -1.0}
+    )
+    with patch.object(
+        coordinator_module.time,
+        "monotonic",
+        return_value=coordinator_module.time.monotonic()
+        + coordinator_module.WRITE_HOLD_SECONDS
+        + 1,
+    ):
+        data = await coordinator._async_update_data()
+    assert data["hc1_parallel_shift"] == -1.0
+
+
+@pytest.mark.asyncio
+async def test_coordinator_hold_keeps_key_missing_from_poll(hass: HomeAssistant):
+    """HC2 block not read this poll (selector mismatch) -> written value stays."""
+    coordinator = DimplexDataUpdateCoordinator(hass, host="192.168.1.100", port=502)
+    coordinator.data = {"connected": True}
+    coordinator.hold_written_value("hc2_parallel_shift", 3)
+    coordinator._fetch = AsyncMock(return_value={"connected": True})
+    data = await coordinator._async_update_data()
+    assert data["hc2_parallel_shift"] == 3

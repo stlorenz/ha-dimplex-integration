@@ -21,6 +21,7 @@ from .const import CONF_NAME, DOMAIN
 from .coordinator import DimplexDataUpdateCoordinator
 from .entity import build_device_info
 from .modbus_registers_extended import (
+    OPERATING_MODE_KEYS,
     OperatingMode,
     OperatingModeRegisters,
     SettingsRegisters,
@@ -292,9 +293,8 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
         _LOGGER.debug(
             "Set temperature to %.1f°C (raw value: %d)", temperature, raw_value
         )
-        if self.coordinator.data is not None:
-            self.coordinator.data["hc1_room_setpoint"] = temperature
-            self.async_write_ha_state()
+        self.coordinator.hold_written_value("hc1_room_setpoint", temperature)
+        self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
@@ -335,6 +335,11 @@ class DimplexClimate(CoordinatorEntity[DimplexDataUpdateCoordinator], ClimateEnt
             return
 
         _LOGGER.debug("Set HVAC mode to %s (Betriebsmodus %d)", hvac_mode, mode_value)
+        mode_key = OPERATING_MODE_KEYS.get(mode_value)
+        if mode_key is not None:
+            self.coordinator.hold_written_value("operating_mode", mode_key)
+            self.coordinator.hold_written_value("operating_mode_code", mode_value)
+            self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self) -> None:
