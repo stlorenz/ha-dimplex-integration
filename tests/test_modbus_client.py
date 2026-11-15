@@ -555,3 +555,14 @@ async def test_total_heat_needs_both_main_counters():
     assert data["heating_energy"] == 10
     assert "hot_water_energy" not in data
     assert "total_heat_generated" not in data
+
+
+@pytest.mark.asyncio
+async def test_read_controller_software_reads_three_words_from_65():
+    client = _connected_client()
+    client.read_holding_registers = AsyncMock(return_value=[13, 3, 16])
+    assert await client.read_controller_software() == "M3.16"
+    client.read_holding_registers.assert_awaited_once_with(65, count=3)
+
+    client.read_holding_registers = AsyncMock(return_value=None)
+    assert await client.read_controller_software() is None

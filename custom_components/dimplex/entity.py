@@ -35,6 +35,10 @@ def build_device_info(coordinator: Any, entry: Any) -> DeviceInfo:
         manufacturer="Dimplex",
         model=getattr(coordinator, "model_name", None),
     )
-    if label is not None:
+    controller_software = getattr(coordinator, "controller_software", None)
+    if controller_software:
+        # exact version from registers 65..67, e.g. "WPM M3.16"
+        info["sw_version"] = f"WPM {controller_software}"
+    elif label is not None:
         info["sw_version"] = f"WPM {label}"
     return info

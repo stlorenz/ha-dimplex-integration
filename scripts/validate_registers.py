@@ -48,10 +48,13 @@ from custom_components.dimplex.modbus_registers import (
 )
 from custom_components.dimplex.modbus_registers_extended import (
     COIL_DATAPOINTS,
+    CONTROLLER_SOFTWARE_REGISTER,
+    CONTROLLER_SOFTWARE_WORDS,
     HC2_SETTINGS_DATAPOINTS,
     HC_SETTINGS_SELECTOR,
     REGISTER_DATAPOINTS,
     RegisterDefinition,
+    format_controller_software,
     get_coil_address,
     get_register_definition,
     read_32bit_value,
@@ -218,6 +221,20 @@ async def validate(reader: Reader, version: SoftwareVersion) -> dict[str, Any]:
         print(f"  {name:13s} reg {addr:5d}  raw={raw!s:>6}  {text or ''}{flag}")
         if raw is None:
             report["problems"].append(f"{name}: read failed")
+
+    words = await reader.holding(
+        CONTROLLER_SOFTWARE_REGISTER, CONTROLLER_SOFTWARE_WORDS
+    )
+    software = format_controller_software(words)
+    report["status"]["controller_software"] = {
+        "address": CONTROLLER_SOFTWARE_REGISTER,
+        "raw": words,
+        "text": software,
+    }
+    print(
+        f"  {'wpm_software':13s} reg {CONTROLLER_SOFTWARE_REGISTER:5d}  raw={words!s:>14}  "
+        f"{software or '(not answered)'}"
+    )
 
     # --- holding register datapoints --------------------------------------
     print("\n== Holding registers ==")

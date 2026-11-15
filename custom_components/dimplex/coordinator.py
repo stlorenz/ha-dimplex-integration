@@ -30,6 +30,7 @@ from .modbus_registers import (
     get_status_message,
     get_status_register,
 )
+from .modbus_registers_extended import controller_software_family
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -86,6 +87,9 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._consecutive_failures = 0
         # data key -> (written value, monotonic deadline)
         self._pending_writes: dict[str, tuple[Any, float]] = {}
+        # WPM software version from registers 65..67 ("M3.16"), read once
+        self.controller_software: str | None = None
+        self._controller_software_checked = False
 
         super().__init__(
             hass,
@@ -155,6 +159,32 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "Dimplex write mode %s",
             "enabled" if enabled else "disabled (read-only)",
         )
+
+    # ------------------------------------------------------------ version
+    async def _read_controller_software(self) -> None:
+        """Read registers 65..67 once and warn if they contradict the setup."""
+        try:
+            version = await self.client.read_controller_software()
+        except Exception as err:  # noqa: BLE001 - never fail a poll for this
+            _LOGGER.debug("Reading the WPM software version failed: %s", err)
+            return
+        if version is None:
+            return
+        self.controller_software = version
+        if self._controller_software_checked:
+            return
+        self._controller_software_checked = True
+        family = controller_software_family(version)
+        if family is not None and family != self.software_version:
+            _LOGGER.warning(
+                "The WPM reports software %s, but the integration is configured "
+                "for the %s register map. Check the software version in the "
+                "integration options.",
+                version,
+                self.software_version.name,
+            )
+        else:
+            _LOGGER.info("WPM software version: %s", version)
 
     # ------------------------------------------------------------ writes
     @callback
@@ -282,6 +312,11 @@ class DimplexDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 "connected": True,
                 "name": self.device_name,
             }
+
+            if self.controller_software is None:
+                await self._read_controller_software()
+            if self.controller_software is not None:
+                data["controller_software"] = self.controller_software
 
             # Read sensor error if available (L/M software only)
             sensor_error_reg = get_sensor_error_register(self.software_version)

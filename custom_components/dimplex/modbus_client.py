@@ -13,6 +13,8 @@ from pymodbus.exceptions import ModbusException
 from .modbus_registers import SoftwareVersion
 from .modbus_registers_extended import (
     COIL_DATAPOINTS,
+    CONTROLLER_SOFTWARE_REGISTER,
+    CONTROLLER_SOFTWARE_WORDS,
     HC2_SELECTOR_VALUE,
     HC2_SETTINGS_DATAPOINTS,
     HC_SETTINGS_SELECTOR,
@@ -21,6 +23,7 @@ from .modbus_registers_extended import (
     OUTPUT_COIL_BLOCK,
     REGISTER_DATAPOINTS,
     RegisterDefinition,
+    format_controller_software,
     get_coil_address,
     get_register_definition,
     read_32bit_value,
@@ -370,6 +373,13 @@ class DimplexModbusClient:
         # Try reading the status register (using L/M software address as default)
         result = await self.read_holding_registers(address=103, count=1)
         return result is not None
+
+    async def read_controller_software(self) -> str | None:
+        """Read the WPM software version (registers 65..67), e.g. "M3.16"."""
+        words = await self.read_holding_registers(
+            CONTROLLER_SOFTWARE_REGISTER, count=CONTROLLER_SOFTWARE_WORDS
+        )
+        return format_controller_software(words)
 
     async def read_system_status(
         self, status_reg: int, lock_reg: int, error_reg: int

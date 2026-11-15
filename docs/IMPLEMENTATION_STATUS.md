@@ -77,8 +77,8 @@ in the wiki and were determined empirically.
 - ⬜ Settings for heating circuit 3 (same block as HC2, needs the selector toggled per poll), swimming pool and 2nd heat generator (wiki pages exist, not yet mapped)
 - ⬜ Remaining time programme functions (hot water lock, thermal disinfection, circulation pump)
 - ⬜ Ventilation datapoints (registers 120–127, 5034)
-- ⬜ Firmware version / serial number in device info (no Modbus datapoint documented)
-- ⬜ Automatic software version detection (no documented datapoint; user selects H / J / L-M)
+- ✅ WPM software version (registers 65–67, e.g. M3.16) in device info and as diagnostic sensor; a letter that contradicts the configured H / J / L-M map logs a warning (no automatic switch yet, the user still selects the map)
+- ⬜ Serial number in device info (no Modbus datapoint documented)
 - ⬜ Auto-discovery, multiple heat pumps per host
 
 ---
@@ -95,6 +95,29 @@ are kept as derived values. Orphaned entities can be deleted from the entity
 registry after the update.
 
 ---
+
+## Planned for 1.1: SG Ready over Modbus
+
+Source: wiki pages "Smart Grid / SG Ready" (3372220648), "Energiemanagementsysteme
+Anbindung" (3399811073) and "Sperre Extern" (3372221110). Replaces the usual
+two-relay (Shelly) wiring of the SG inputs.
+
+- Select **Smart Grid** on register 5167: 0 = hardware inputs, 10 = gelb (normal),
+  11 = grün (raise values, DHW to maximum 5048), 12 = rot (lowering values, DHW to
+  minimum 5145), 13 = dunkelgrün (power level 3 plus heaters). The wiki documents
+  no timeout, another project observed the WPM falling back to 0 after about 60 s,
+  so the coordinator re-writes the chosen value on every poll while it is not 0.
+  Starts as 0 after every Home Assistant restart (built-in failsafe). Needs
+  software M 1.3 and Smart Grid enabled in the Fachmann menu (Anlagenparameter).
+- Sensor **Smart Grid state** decoded from input coils 3/4: rot = 0/1, gelb = 0/0,
+  grün = 1/0, dunkelgrün = 1/1 (the already existing Smart Grid 1/2 binary sensors
+  stay).
+- Optional switch **Sperre Extern** on register 5130 (ab M3.8): 0 hardware,
+  10 not active, 11 active; which function the lock triggers (frost protection,
+  holiday, DHW lock, summer) is configured in the WPM.
+- README example: PV surplus automation with a minimum dwell time per state and a
+  daily budget, as users otherwise build with relays.
+- Not planned: heartbeat 5063/5064 (ab M3.14) until its effect on the WPM is clear.
 
 ## Road to 1.0
 

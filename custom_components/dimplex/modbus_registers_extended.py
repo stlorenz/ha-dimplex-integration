@@ -556,6 +556,44 @@ HC2_SETTINGS_DATAPOINTS: dict[str, dict[SoftwareVersion, RegisterDefinition]] = 
 after the selector (5082) has been set to 2 (DimplexModbusClient.read_hc_settings)."""
 
 
+# ---------------------------------------------------------------------------
+# Controller software version (wiki "Energiemanagementsysteme Anbindung")
+#
+#   65 SWa_Version  0 = "--", 1 = A ... 26 = Z   (letter, e.g. 13 = M)
+#   66 SWa_Nummer   digit                        (e.g. 3)
+#   67 SWa_Index    digit                        (e.g. 16)   -> "M3.16"
+#
+# Documented on the M-software page; whether H/J/L controllers answer is
+# unknown, so a failed read is silently ignored.
+# ---------------------------------------------------------------------------
+CONTROLLER_SOFTWARE_REGISTER = 65
+CONTROLLER_SOFTWARE_WORDS = 3
+
+_SOFTWARE_LETTER_FAMILY: dict[str, SoftwareVersion] = {
+    "H": SoftwareVersion.H,
+    "J": SoftwareVersion.J,
+    "L": SoftwareVersion.L_M,
+    "M": SoftwareVersion.L_M,
+}
+
+
+def format_controller_software(words: list[int] | None) -> str | None:
+    """Turn registers 65..67 into a version string such as "M3.16"."""
+    if not words or len(words) < CONTROLLER_SOFTWARE_WORDS:
+        return None
+    letter, number, index = words[0], words[1], words[2]
+    if not 1 <= letter <= 26:
+        return None
+    return f"{chr(ord('A') + letter - 1)}{number}.{index}"
+
+
+def controller_software_family(version: str | None) -> SoftwareVersion | None:
+    """Map a version string ("M3.16") to the register-map family it belongs to."""
+    if not version:
+        return None
+    return _SOFTWARE_LETTER_FAMILY.get(version[0].upper())
+
+
 REGISTER_DATAPOINTS: dict[str, dict[SoftwareVersion, RegisterDefinition]] = {
     # Operating data
     "outside_temperature": OperatingDataRegisters.OUTSIDE_TEMPERATURE,
